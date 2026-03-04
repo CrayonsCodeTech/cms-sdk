@@ -13,7 +13,9 @@ import type { Album, AlbumItem } from "../types/album";
 import type { BrandGroup, Brand } from "../types/brand";
 import type { Testimonial } from "../types/testimonials";
 import type { Event } from "../types/event";
+import type { Faq } from "../types/faq";
 import type { FaqGroup } from "../types/faq-group";
+import type { ContactPayload, Contact } from "../types/contact";
 
 export interface FetchOptions extends RequestInit {
   revalidate?: number;
@@ -25,12 +27,26 @@ export interface CmsClientConfig {
   defaultOptions?: FetchOptions;
 }
 
+export class CmsError extends Error {
+  constructor(
+    public message: string,
+    public status?: number,
+    public url?: string,
+  ) {
+    super(message);
+    this.name = "CmsError";
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function createCmsClient(config: CmsClientConfig) {
   const { baseUrl, defaultOptions = {} } = config;
 
   async function cmsFetch<T>(
     endpoint: string,
     options: FetchOptions = {},
+    retries = 2,
   ): Promise<T | null> {
     const url = `${baseUrl}${endpoint}`;
     const {
@@ -39,7 +55,6 @@ export function createCmsClient(config: CmsClientConfig) {
       ...rest
     } = { ...defaultOptions, ...options };
 
-    // Next.js specific fetch options are passed through 'next' property
     const fetchConfig: RequestInit & {
       next?: { revalidate?: number; tags?: string[] };
     } = {
@@ -50,25 +65,48 @@ export function createCmsClient(config: CmsClientConfig) {
       },
     };
 
-    try {
-      const response = await fetch(url, fetchConfig);
+    let lastError: Error | null = null;
 
-      if (!response.ok) {
-        console.error(`API request failed: ${response.status} ${url}`);
-        return null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, fetchConfig);
+
+        if (!response.ok) {
+          const errorMsg = `API request failed: ${response.status} ${url}`;
+          console.error(errorMsg);
+
+          // Retry on transient server errors (502, 503, 504)
+          if (attempt < retries && [502, 503, 504].includes(response.status)) {
+            await sleep(Math.pow(2, attempt) * 1000);
+            continue;
+          }
+
+          return null;
+        }
+
+        const result = await response.json();
+        return result.data ?? result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(
+          `API request error (attempt ${attempt + 1}/${retries + 1}): ${url}`,
+          lastError,
+        );
+
+        if (attempt < retries) {
+          await sleep(Math.pow(2, attempt) * 1000);
+          continue;
+        }
       }
-
-      const result = await response.json();
-      return result.data ?? result;
-    } catch (error) {
-      console.error(`API request error: ${url}`, error);
-      return null;
     }
+
+    return null;
   }
 
   async function cmsFetchPaginated<T>(
     endpoint: string,
     options: FetchOptions = {},
+    retries = 2,
   ): Promise<PaginatedResponse<T>> {
     const emptyResponse: PaginatedResponse<T> = {
       data: [],
@@ -97,28 +135,49 @@ export function createCmsClient(config: CmsClientConfig) {
       },
     };
 
-    try {
-      const response = await fetch(url, fetchConfig);
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, fetchConfig);
 
-      if (!response.ok) {
-        console.error(`API request failed: ${response.status} ${url}`);
-        return emptyResponse;
+        if (!response.ok) {
+          console.error(`API request failed: ${response.status} ${url}`);
+
+          if (attempt < retries && [502, 503, 504].includes(response.status)) {
+            await sleep(Math.pow(2, attempt) * 1000);
+            continue;
+          }
+
+          return emptyResponse;
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error(
+          `API request error (attempt ${attempt + 1}/${retries + 1}): ${url}`,
+          error,
+        );
+
+        if (attempt < retries) {
+          await sleep(Math.pow(2, attempt) * 1000);
+          continue;
+        }
       }
-
-      return await response.json();
-    } catch (error) {
-      console.error(`API request error: ${url}`, error);
-      return emptyResponse;
     }
+
+    return emptyResponse;
   }
 
   function buildQueryString(
-    params: Record<string, string | number | undefined>,
+    params: Record<string, string | number | string[] | number[] | undefined>,
   ): string {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined) {
-        query.append(key, String(value));
+        if (Array.isArray(value)) {
+          value.forEach((v) => query.append(key, String(v)));
+        } else {
+          query.append(key, String(value));
+        }
       }
     });
     return query.toString();
@@ -477,6 +536,41 @@ export function createCmsClient(config: CmsClientConfig) {
     return result ?? [];
   }
 
+  async function submitContactForm(
+    siteId: string,
+    payload: ContactPayload,
+    options?: FetchOptions,
+  ): Promise<Contact | null> {
+    return cmsFetch<Contact>(`/api/public/cms/${siteId}/contact/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      revalidate: CACHE.NO_CACHE, // Never cache form submissions
+      ...options,
+    });
+  }
+
+  async function fetchFaqs(
+    siteId: string,
+    params?: { group_id?: string },
+    options?: FetchOptions,
+  ): Promise<Faq[]> {
+    const query = params?.group_id
+      ? buildQueryString({ group_id: params.group_id })
+      : "";
+    const result = await cmsFetch<Faq[]>(
+      `/api/public/cms/${siteId}/faqs/?${query}`,
+      {
+        revalidate: CACHE.MEDIUM,
+        tags: ["faqs"],
+        ...options,
+      },
+    );
+    return result ?? [];
+  }
+
   return {
     // Header, Footer, Site Config
     fetchHeader,
@@ -511,6 +605,9 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchEventById,
     // FAQ Groups
     fetchFaqGroups,
+    fetchFaqs,
+    // Contact
+    submitContactForm,
     // Generic fetch utilities
     fetch: cmsFetch,
     fetchPaginated: cmsFetchPaginated,
