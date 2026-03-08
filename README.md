@@ -1,6 +1,6 @@
 # @crayons/cms-sdk
 
-A robust, type-safe SDK for fetching data from the Crayons CMS. Designed for Next.js with built-in caching and revalidation support.
+A robust, type-safe SDK/Package for fetching data from the Crayons CMS. Designed for Next.js.
 
 ## Features
 
@@ -16,9 +16,9 @@ You can install the SDK directly from private GitHub repository. Ensure you have
 ```bash
 npm install git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git
 # or
-pnpm add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git
+pnpm add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git --allow-build=@crayons/cms-sdk
 # or
-yarn add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git
+bun add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git && bun pm trust @crayons/cms-sdk
 ```
 
 ## Getting Started
@@ -38,9 +38,9 @@ NEXT_PUBLIC_CMS_SITE_ID=your-site-id-here
 >
 > Use the following credentials to log in:
 >
-> | Field    | Value         |
-> | -------- | ------------- |
-> | Username | `development` |
+> | Field    | Value                 |
+> | -------- | --------------------- |
+> | Username | `development`         |
 > | Password | _(provided by admin)_ |
 >
 > Add these to your `.env.local`:
