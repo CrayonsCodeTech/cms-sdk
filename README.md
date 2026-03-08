@@ -32,6 +32,24 @@ NEXT_PUBLIC_CMS_BASE_URL=https://api.yourcms.com
 NEXT_PUBLIC_CMS_SITE_ID=your-site-id-here
 ```
 
+> **Development Environment**
+>
+> Visit [cms.deployown.com/login](https://cms.deployown.com/login) to view and edit data for the website.
+>
+> Use the following credentials to log in:
+>
+> | Field    | Value         |
+> | -------- | ------------- |
+> | Username | `development` |
+> | Password | _(provided by admin)_ |
+>
+> Add these to your `.env.local`:
+>
+> ```bash
+> NEXT_PUBLIC_CMS_BASE_URL=https://api.cms.deployown.com
+> NEXT_PUBLIC_CMS_SITE_ID=30de3c6b-70bd-45dd-a0bd-58143f738902
+> ```
+
 ### 2. Initialization
 
 It is recommended to create a singleton instance of the CMS client in your project (e.g., `lib/cms.ts`).
