@@ -13,7 +13,7 @@ export interface HeroContent {
   section_heading: string;
   title: string;
   subtitle: string;
-  description: string;
+  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   cta: CTA[];
   video_url: string;
   image: {
@@ -27,7 +27,7 @@ export interface CustomContent {
   logo: string | null;
   section_title: string | null;
   card_title: string;
-  card_content: string;
+  card_content: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   card_content_bol?: boolean | null;
   cta?: CTA;
   image_src: string;
@@ -35,7 +35,7 @@ export interface CustomContent {
   reverse: boolean | null;
   image_style: string | null;
   small_image: boolean | null;
-  subtitle?: string | null;
+  subtitle?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   external_link: boolean;
 }
 
@@ -43,7 +43,7 @@ export interface CTAContent {
   section_heading: string;
   title: string;
   subtitle?: string;
-  description: string;
+  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   cta: CTA[];
   image: Image[];
   footer_text?: string;
@@ -65,7 +65,7 @@ export interface ServicesSection {
 export interface GenericSection {
   section_heading: string;
   title: string;
-  subtitle: string;
+  subtitle: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
 }
 
 export interface ClientsSection extends GenericSection {
@@ -88,7 +88,7 @@ export interface RichContentSection {
   section_heading: string;
   title: string;
   subtitle: string;
-  content: string;
+  content: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
 }
 
 export interface AboutSection {
@@ -99,7 +99,7 @@ export interface AboutSection {
 
 export interface MultiValueItem {
   title: string;
-  description: string;
+  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   image: Image;
   cta?: Partial<CTA>;
 }
@@ -108,7 +108,7 @@ export interface MultiValueSection {
   section_heading: string;
   title: string;
   subtitle?: string;
-  description: string;
+  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   values: MultiValueItem[];
 }
 

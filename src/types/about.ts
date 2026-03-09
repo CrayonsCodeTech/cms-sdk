@@ -14,9 +14,9 @@ export interface AboutUsData {
   id: number;
   site_id: number;
   company_profile_summary: string;
-  company_profile: string;
-  vision: string;
-  mission: string;
+  company_profile: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  vision: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  mission: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   image_url: string;
   image_alt: string;
   video_url: string;

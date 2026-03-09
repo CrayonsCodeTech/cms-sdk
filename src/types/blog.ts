@@ -6,7 +6,7 @@ export interface Blog {
   image_url?: string | null;
   image_alt?: string | null;
   author: string;
-  description?: string | null;
+  description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   excerpt?: string | null;
   is_published: boolean;
   published_at?: string | null;

@@ -338,16 +338,22 @@ export function RenderSections({ sections }: { sections: Section[] }) {
 
 Several section types only carry **display text** (headings, subtitles) in `section.content`. The actual entity data must be fetched separately and passed into the section component. This is the same pattern as services, blogs, and events — just applied inside individual section components.
 
-| Section type | Carries in `content` | Fetch for actual data |
-|---|---|---|
-| `service` | `section_heading`, `title`, `subtitle` | `fetchServices` |
-| `testimonial` | `section_heading`, `title`, `subtitle`, `type` | `fetchTestimonials` |
-| `team` | `section_heading`, `title`, `subtitle`, `team_category_id` | `fetchTeamMembers` |
-| `faq` | `section_heading`, `title`, `subtitle`, `group_id` | `fetchFaqGroups` / `fetchFaqs` |
-| `clients` | `section_heading`, `title`, `subtitle`, `brand_group_id` | *(brands API — use `brand_group_id`)* |
-| `gallery` | `section_heading`, `title`, `subtitle`, `album_id` | `fetchAlbums` |
-| `event` | `section_heading`, `title`, `subtitle` | `fetchEvents` |
-| `blog` | `section_heading`, `title`, `subtitle` | `fetchBlogs` |
+| Section name | `type` discriminant | Content type | Primary table/entity | API call(s) needed |
+|---|---|---|---|---|
+| Hero | `"hero"` | `HeroContent[]` | `page.sections` (from `page`) | None — content is inline |
+| Custom | `"custom"` | `CustomContent` | `page.sections` (from `page`) | None — content is inline |
+| Call to Action | `"cta"` | `CTAContent` | `page.sections` (from `page`) | None — content is inline |
+| Rich Content | `"rich-content"` | `RichContentSection` | `page.sections` (from `page`) | None — content is inline |
+| About | `"about"` | `AboutSection` | `page.sections` + `about-us` | `fetchAboutUs(siteId)` for profile/vision/mission/stats |
+| Multi Value | `"multi-value"` | `MultiValueSection` | `page.sections` (from `page`) | None — content is inline |
+| Services | `"service"` | `ServicesSection` | `services` | `fetchServices(siteId)` |
+| Testimonials | `"testimonial"` | `TestimonialsSection` | `testimonials` | `fetchTestimonials(siteId, { type })` — use `content.type` to filter |
+| Team | `"team"` | `TeamSection` | `team-members` | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, content.team_category_id)` |
+| FAQ | `"faq"` | `FaqSection` | `faq-groups` + `faqs` | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })` |
+| Clients / Brands | `"clients"` | `ClientsSection` | `brand-groups` + `brands` | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })` |
+| Gallery | `"gallery"` | `GallerySection` | `albums` + `album-items` | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed |
+| Events | `"event"` | `GenericSection` | `events` | `fetchEvents(siteId, { page, limit, search })` |
+| Blog | `"blog"` | `GenericSection` | `blog` | `fetchBlogs(siteId, { page, limit, search })` |
 
 **How to handle this in section components:**
 
@@ -474,6 +480,23 @@ export async function FaqSection({ content }: { content: FaqSection }) {
 
 Different page types follow different rendering strategies. Understanding these patterns is key to building correctly.
 
+### Page Fetch Map (Route -> Table/Entity -> SDK Fetch)
+
+| Route | Primary tables/entities | Required fetch call(s) |
+|---|---|---|
+| `/` (home) | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")` |
+| `[[...slug]]` CMS pages | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)` |
+| `/about` | `page` + `about-us` | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)` |
+| `/services` | `page` + `services` | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)` |
+| `/services/[slug]` | `services` | `fetchServices(siteId)` (find by slug) or `fetchServiceById(siteId, id)` |
+| `/blog` | `page` + `blog` | `fetchPageByUrl(siteId, "/blog")` + `fetchBlogs(siteId, params)` |
+| `/blog/[slug]` | `blog` | `fetchBlogs(siteId, { limit })` (slug lookup) + `fetchBlogById(siteId, id)` |
+| `/events` | `page` + `events` | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)` |
+| `/events/[slug]` | `events` | `fetchEvents(siteId, { limit })` (slug lookup) or `fetchEventById(siteId, id)` |
+| `/gallery` | `page` + `albums` | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)` |
+| `/gallery/[slug]` | `albums` + `album-items` | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })` |
+| `/contact` | `contact` (form submissions) | `submitContactForm(siteId, payload)` |
+
 ### Home Page — Section Rendering with Targeting
 
 The home page is a CMS-managed page (`page_type: "home"`). It uses `RenderSections` to render its sections in order. However, because the home page often needs precise control over layout (e.g. placing a specific section above the fold, or inserting non-CMS UI between sections), you can target sections by **type + index** or by **section id** instead of blindly rendering all sections in sequence.
@@ -536,6 +559,72 @@ return <RenderSections sections={page.sections} />;
 ```
 
 The CMS editor controls the order and content of all sections. Your job is to make sure every section type is handled in `RenderSections`.
+
+---
+
+### About Us Page — Page Sections + About Data
+
+About pages usually combine:
+- **Page-managed section chrome** (`section_heading`, `title`, CTA labels) from `fetchPageByUrl("/about")`
+- **Actual about content** (company profile, vision, mission, stats, values) from `fetchAboutUs`
+
+```tsx
+// app/about/page.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import SafeHtml from "@/components/safe-html";
+
+export default async function AboutPage() {
+  const [page, about] = await Promise.all([
+    cms.fetchPageByUrl(SITE_ID, "/about"),
+    cms.fetchAboutUs(SITE_ID),
+  ]);
+
+  if (!page || !about) notFound();
+
+  const aboutSection = page.sections.find((s) => s.type === "about");
+
+  return (
+    <main>
+      {aboutSection && (
+        <header>
+          <p>{aboutSection.content.section_heading}</p>
+          <h1>{aboutSection.content.title}</h1>
+        </header>
+      )}
+
+      <section>
+        <h2>Company Profile</h2>
+        <SafeHtml html={about.company_profile} />
+      </section>
+
+      <section>
+        <h2>Vision</h2>
+        <SafeHtml html={about.vision} />
+      </section>
+
+      <section>
+        <h2>Mission</h2>
+        <SafeHtml html={about.mission} />
+      </section>
+
+      {about.values.length > 0 && (
+        <section>
+          <h2>Core Values</h2>
+          <ul>
+            {about.values.map((value) => (
+              <li key={value.title}>
+                <h3>{value.title}</h3>
+                <p>{value.description}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </main>
+  );
+}
+```
 
 ---
 
@@ -1221,6 +1310,30 @@ Open that file to see every type, interface, and method signature the package ex
 - **API Wrappers**: `src/types/api-response.ts`
 - **Pagination**: `src/types/pagination.ts`
 - **Forms**: `src/types/contact.ts`
+
+> **Browse all source types on GitHub:** [`src/types/`](https://github.com/CrayonsCodeTech/cms-sdk/tree/main/src/types)
+
+### Rich Text / HTML Fields
+
+Several fields in the type definitions contain **HTML markup** produced by the CMS rich-text editor. These fields must be rendered with `dangerouslySetInnerHTML` (or a sanitizer such as DOMPurify) — never as plain text.
+
+Each such field is annotated with `@remarks Rendered as HTML` in its type definition. Hover over the field in your IDE to see the annotation, or browse the source on GitHub (link above).
+
+**Fields that contain HTML:**
+
+| Type | Field | Notes |
+|------|-------|-------|
+| `HeroContent` | `description` | Hero slide body copy |
+| `CustomContent` | `card_content` | Main body of a custom card |
+| `CustomContent` | `subtitle` | Secondary copy line (optional) |
+| `CTAContent` | `description` | CTA section body copy |
+| `MultiValueSection` | `description` | Section-level intro text |
+| `MultiValueItem` | `description` | Per-item description |
+| `RichContentSection` | `content` | Full rich-text article body |
+| `Faq` | `answer` | FAQ answer (supports lists, links) |
+| `Blog` | `description` | Full blog post body |
+| `Service` | `description` | Full service detail body |
+| `Event` | `description` | Full event detail body |
 
 ## Error Handling
 

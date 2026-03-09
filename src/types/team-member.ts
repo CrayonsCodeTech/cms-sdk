@@ -10,7 +10,7 @@ export interface TeamMember {
   name: string;
   slug: string;
   position?: string;
-  description?: string;
+  description?: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   profile_image?: string;
   email?: string;
   location?: string;

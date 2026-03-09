@@ -3,7 +3,7 @@ export interface BrandGroup {
   site_id: string;
   title: string;
   slug: string;
-  description: string | null;
+  description: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   is_published: boolean;
   order: number;
   created_at: string;
