@@ -30,11 +30,18 @@
   "author": "Crayons",
   "license": "ISC",
   "devDependencies": {
+    "@types/react": "^18.0.0",
     "typescript": "^5.0.0",
     "tsup": "^8.0.0"
   },
   "peerDependencies": {
-    "next": ">=13.0.0"
+    "next": ">=13.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "lucide-react": "^0.400.0"
+  },
+  "dependencies": {
+    "lucide-react": "^0.400.0"
   },
   "peerDependenciesMeta": {
     "next": {

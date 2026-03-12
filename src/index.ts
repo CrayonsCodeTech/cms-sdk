@@ -27,3 +27,6 @@ export * from "./types/faq-group";
 export * from "./types/company-info";
 export * from "./types/site";
 export * from "./types/contact";
+
+// Components
+export * from "./components/Icon";

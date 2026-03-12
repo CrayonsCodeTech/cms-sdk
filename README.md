@@ -253,6 +253,32 @@ const { site_name, logo, contact } = siteConfig;
 
 > `siteConfig` can be `null` if the fetch fails, so always guard it at the layout level and pass it down only if it exists.
 
+#### 4. Icon Component (Lucide)
+
+The SDK provides a built-in `Icon` component to render CMS-driven icons. It uses `lucide-react` under the hood.
+
+```tsx
+import { Icon } from "@crayons/cms-sdk";
+
+export function FeatureItem({
+  iconName,
+  title,
+}: {
+  iconName: string;
+  title: string;
+}) {
+  return (
+    <div>
+      {/* Renders the Lucide icon by name, falling back to HelpCircle if not found */}
+      <Icon name={iconName} size={24} className="text-primary" />
+      <h3>{title}</h3>
+    </div>
+  );
+}
+```
+
+> **Requirements**: To use the `Icon` component, you must have `lucide-react` and `react` installed in your project.
+
 ---
 
 #### Advanced UI Implementation (Recommended)
