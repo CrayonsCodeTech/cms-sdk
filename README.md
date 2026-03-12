@@ -1573,6 +1573,161 @@ import { CmsError } from "@crayons/cms-sdk";
 
 The `CmsError` class provides `status` and `url` properties for debugging.
 
+## FAQ & Common Issues
+
+This section addresses common questions and issues reported by developers.
+
+### 1. Rendering Rich Text / "HTML Tags in Response" (#6)
+
+Many CMS fields (like `description`, `content`, `vision`, `mission`) contain HTML markup. If you render them as plain text, you will see raw tags.
+
+**Solution**: Use `dangerouslySetInnerHTML`.
+
+```tsx
+// Simple rendering
+<div
+  dangerouslySetInnerHTML={{ __html: blog.description }}
+  className="prose max-w-none"
+/>;
+
+// Recommended with Sanitization
+import DOMPurify from "isomorphic-dompurify";
+
+export function RichText({ content }: { content: string }) {
+  const cleanHtml = DOMPurify.sanitize(content);
+  return <div dangerouslySetInnerHTML={{ __html: cleanHtml }} />;
+}
+```
+
+### 2. Social Links as Raw URLs in Team Section (#8)
+
+The `socials` field in `TeamMember` returns an array of objects.
+
+**Solution**: Use the built-in `Icon` component to map platforms to icons.
+
+```tsx
+import { Icon } from "@crayons/cms-sdk";
+
+export function SocialLinks({ socials }: { socials: TeamMember["socials"] }) {
+  if (!socials) return null;
+
+  return (
+    <div className="flex gap-4">
+      {socials.map((social, i) => (
+        <a key={i} href={social.url} target="_blank" rel="noopener noreferrer">
+          {/* Automatically handles "Facebook", "Twitter", "Linkedin", etc. */}
+          <Icon name={social.platform || "Link"} size={20} />
+        </a>
+      ))}
+    </div>
+  );
+}
+```
+
+### 3. How to Render the "About" Page Section (#7, #5)
+
+The `about` section type in the CMS refers to global "About Us" data (mission, vision, values, stats). When this section appears in a page's `sections` array, it only contains small heading/subtitles. You must fetch the actual company data using `fetchAboutUs`.
+
+**Solution**: Fetch the data within your `AboutSection` component.
+
+```tsx
+// components/sections/about.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { Icon } from "@crayons/cms-sdk";
+import type { AboutSection as AboutSectionType } from "@crayons/cms-sdk";
+
+export async function AboutSection({ content }: { content: AboutSectionType }) {
+  const about = await cms.fetchAboutUs(SITE_ID);
+
+  if (!about) return null;
+
+  return (
+    <section>
+      <h2>{content.title || "About Us"}</h2>
+      {content.subtitle && <p>{content.subtitle}</p>}
+
+      <div dangerouslySetInnerHTML={{ __html: about.company_profile }} />
+
+      <h3>Our Values</h3>
+      <div className="grid">
+        {about.values.map((v, i) => (
+          <div key={i}>
+            <Icon name={v.icon} />
+            <h4>{v.title}</h4>
+            <p>{v.description}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+```
+
+### 4. How to Navigate Between Pages (#3)
+
+The `Page` object returns a `url` property. Use the Next.js `<Link>` component for navigation. CMS URLs are relative to the root.
+
+**Solution**:
+
+```tsx
+import Link from "next/link";
+
+// In your Header or Page
+{
+  pages.map((page) => (
+    <Link key={page.id} href={page.url === "/" ? "/" : `/${page.url}`}>
+      {page.title}
+    </Link>
+  ));
+}
+```
+
+### 5. "How to see Types" (#4)
+
+You can view all available types by looking at the `index.d.ts` file in `node_modules/@crayons/cms-sdk/dist/index.d.ts`. Alternatively, you can browse the source types in the GitHub repository's `src/types` folder.
+
+**Solution**:
+
+1.  **Console Logging**: Since these are Server Components, logs will appear in your **terminal**, not the browser console.
+    ```ts
+    const data = await fetchBlogs(siteId);
+    console.log("DEBUG BLOGS:", JSON.stringify(data, null, 2));
+    ```
+2.  **Type Inspection**: Hover over any variable in VS Code to see its structure, or CMD+Click on the fetch method to jump to the `index.d.ts` definition.
+
+### 6. My Images are broken (#4)
+
+If you see images in your data but they don't render with `<Image />`, you likely missed the `remotePatterns` config.
+
+**Solution**: Ensure `next.config.ts` includes the CMS domain:
+
+```ts
+remotePatterns: [{ protocol: "https", hostname: "api.cms.deployown.com" }];
+```
+
+### 7. Environmental Variables not working
+
+If `cms.fetch...` is failing with "Invalid URL", your `NEXT_PUBLIC_CMS_BASE_URL` might be missing or incorrectly formatted.
+
+**Solution**:
+
+- Ensure `.env.local` has `NEXT_PUBLIC_CMS_BASE_URL=https://api.cms.deployown.com` (no trailing slash).
+- If calling from a **Client Component**, the variable _must_ start with `NEXT_PUBLIC_`.
+
+### 8. Handling Empty States
+
+The SDK returns `[]` for lists and `null` for single objects if data is missing or an error occurs.
+
+**Solution**: Always guard your components.
+
+```tsx
+const services = await cms.fetchServices(SITE_ID);
+if (!services || services.length === 0) return <p>No services found.</p>;
+```
+
+---
+
 ## Developer Tips
 
 - **Site ID**: Always ensure your `SITE_ID` is valid, as most methods require it.
+- **Async Components**: Always use `await` when calling SDK methods inside Server Components.
