@@ -104,7 +104,10 @@ export function SiteHeader({ header, siteConfig }: Props) {
       {/* Logo — use logo.logo_primary (light) or logo.logo_dark as needed */}
       {siteConfig?.logo.logo_primary && (
         <Link href="/">
-          <img src={siteConfig.logo.logo_primary} alt={siteConfig.site_name ?? "Logo"} />
+          <img
+            src={siteConfig.logo.logo_primary}
+            alt={siteConfig.site_name ?? "Logo"}
+          />
         </Link>
       )}
 
@@ -200,74 +203,217 @@ export function SiteFooter({ footer }: { footer: Footer }) {
 const { site_name, logo, contact } = siteConfig;
 
 // Phone numbers (array)
-{contact.phone_number.map((phone) => (
-  <a key={phone} href={`tel:${phone}`}>{phone}</a>
-))}
+{
+  contact.phone_number.map((phone) => (
+    <a key={phone} href={`tel:${phone}`}>
+      {phone}
+    </a>
+  ));
+}
 
 // Emails (array)
-{contact.email.map((email) => (
-  <a key={email} href={`mailto:${email}`}>{email}</a>
-))}
+{
+  contact.email.map((email) => (
+    <a key={email} href={`mailto:${email}`}>
+      {email}
+    </a>
+  ));
+}
 
 // Social links
-{contact.socials.map((social) => (
-  <a key={social.site_name} href={social.link} target="_blank" rel="noopener noreferrer">
-    {social.site_name}
-  </a>
-))}
+{
+  contact.socials.map((social) => (
+    <a
+      key={social.site_name}
+      href={social.link}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {social.site_name}
+    </a>
+  ));
+}
 
 // Location (optional)
-{contact.location?.location.map((line) => (
-  <p key={line}>{line}</p>
-))}
-{contact.location?.google_maps_url && (
-  <a href={contact.location.google_maps_url} target="_blank" rel="noopener noreferrer">
-    View on Map
-  </a>
-)}
+{
+  contact.location?.location.map((line) => <p key={line}>{line}</p>);
+}
+{
+  contact.location?.google_maps_url && (
+    <a
+      href={contact.location.google_maps_url}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      View on Map
+    </a>
+  );
+}
 ```
 
 > `siteConfig` can be `null` if the fetch fails, so always guard it at the layout level and pass it down only if it exists.
 
 ---
 
-#### URL-Based Page Rendering
+#### Advanced UI Implementation (Recommended)
 
-Use a Next.js catch-all route (`app/[[...slug]]/page.tsx`) to resolve any URL to its CMS page. The slug segments are joined into a path and passed to `fetchPageByUrl`, which returns `null` if no match — triggering a 404.
+For production-grade applications, we recommend a declarative approach using a **Registry** and **Router**. This pattern removes the need for hardcoded folders (like `/blog` or `/services`) and handles all CMS-driven URLs dynamically.
+
+##### 1. Declarative Page Registry
+
+Map CMS `page_type` strings to their corresponding React components. This centralizes your UI mapping.
+
+```tsx
+// lib/cms-registry.ts
+import HomePage from "@/components/pages/HomePage";
+import AboutPage from "@/components/pages/AboutPage";
+import BlogsPage from "@/components/pages/BlogPage";
+import ServicesPage from "@/components/pages/ServicesPage";
+import EventsPage from "@/components/pages/EventPage";
+import GalleryPage from "@/components/pages/GalleryPage";
+import TeamPage from "@/components/pages/TeamPage";
+import ContactPage from "@/components/pages/ContactPage";
+import CustomPage from "@/components/pages/CustomPage";
+import ProductsPage from "@/components/pages/ProductsPage";
+
+// Detail views (sub-pages)
+import BlogDetailPage from "@/components/pages/BlogDetailPage";
+import ServiceDetailPage from "@/components/pages/ServiceDetailPage";
+import EventDetailPage from "@/components/pages/EventDetailPage";
+import GalleryDetailPage from "@/components/pages/GalleryDetailPage";
+import TeamMemberDetailPage from "@/components/pages/TeamMemberDetailPage";
+import TeamCategoryPage from "@/components/pages/TeamCategoryPage";
+import ProductDetailPage from "@/components/pages/ProductDetailPage";
+
+export const PAGE_COMPONENT_MAP: Record<string, any> = {
+  home: HomePage,
+  about: AboutPage,
+  blog: BlogsPage,
+  services: ServicesPage,
+  events: EventsPage,
+  gallery: GalleryPage,
+  team: TeamPage,
+  contact: ContactPage,
+  custom: CustomPage,
+  products: ProductsPage,
+};
+
+// Maps parent page type to its detail component
+export const DETAIL_COMPONENT_MAP: Record<string, any> = {
+  blog: BlogDetailPage,
+  services: ServiceDetailPage,
+  events: EventDetailPage,
+  gallery: GalleryDetailPage,
+  products: ProductDetailPage,
+  team: {
+    member: TeamMemberDetailPage,
+    category: TeamCategoryPage,
+  },
+};
+```
+
+##### 2. Route Resolution Helper
+
+This utility determines if a URL path is an exact CMS page or a "Detail" page (e.g., a specific blog post).
+
+```tsx
+// lib/cms-router.ts
+import { cms, SITE_ID } from "./cms";
+
+export async function resolveCmsRoute(slug: string[]) {
+  const urlPath = slug.length > 0 ? `/${slug.join("/")}` : "/";
+  const pages = await cms.fetchPages(SITE_ID);
+
+  // 1. Check for exact match
+  const exactPage = pages.find((p) => {
+    const norm = (u: string) => "/" + u.replace(/^\/|\/$/g, "");
+    return norm(p.url) === norm(urlPath);
+  });
+
+  if (exactPage) return { type: "page" as const, data: exactPage };
+
+  // 2. Check for detail page (walking up the path)
+  if (slug.length > 0) {
+    for (let i = slug.length - 1; i >= 0; i--) {
+      const parentPath = "/" + slug.slice(0, i).join("/");
+      const parentPage = pages.find((p) => p.url === parentPath);
+
+      if (parentPage) {
+        return {
+          type: "detail" as const,
+          parentType: parentPage.page_type,
+          slug: slug.slice(i), // e.g., ["my-post-slug"]
+          parentUrl: parentPage.url,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+```
+
+##### 3. Unified Catch-All Route
+
+Using the registry and router, your `app/[[...slug]]/page.tsx` handles every route dynamically.
 
 ```tsx
 // app/[[...slug]]/page.tsx
 import { notFound } from "next/navigation";
-import { cms, SITE_ID } from "@/lib/cms";
-import { RenderSections } from "@/components/render-sections";
+import { resolveCmsRoute } from "@/lib/cms-router";
+import { PAGE_COMPONENT_MAP, DETAIL_COMPONENT_MAP } from "@/lib/cms-registry";
 
-interface Props {
+export default async function CatchAllPage({
+  params,
+}: {
   params: Promise<{ slug?: string[] }>;
-}
+}) {
+  const { slug = [] } = await params;
+  const resolution = await resolveCmsRoute(slug);
 
-export default async function CmsPage({ params }: Props) {
-  const { slug } = await params;
-  // Join segments back into a path; "/" for the home page
-  const urlPath = slug ? `/${slug.join("/")}` : "/";
+  if (!resolution) notFound();
 
-  const page = await cms.fetchPageByUrl(SITE_ID, urlPath);
+  if (resolution.type === "page") {
+    const Component =
+      PAGE_COMPONENT_MAP[resolution.data.page_type] ||
+      PAGE_COMPONENT_MAP.custom;
+    return <Component page={resolution.data} />;
+  }
 
-  if (!page) notFound();
+  if (resolution.type === "detail") {
+    const Component = DETAIL_COMPONENT_MAP[resolution.parentType];
+    if (!Component) notFound();
 
-  return <RenderSections sections={page.sections} />;
-}
+    // Special handling for nested detail types (like Team)
+    if (resolution.parentType === "team") {
+      if (resolution.slug.length === 1) {
+        return (
+          <Component.category
+            params={Promise.resolve({ category: resolution.slug[0] })}
+          />
+        );
+      }
+      return (
+        <Component.member
+          params={Promise.resolve({
+            category: resolution.slug[0],
+            slug: resolution.slug[1],
+          })}
+        />
+      );
+    }
 
-// Pre-render all published pages at build time
-export async function generateStaticParams() {
-  const pages = await cms.fetchPages(SITE_ID);
+    return (
+      <Component
+        params={Promise.resolve({ slug: resolution.slug[0] })}
+        parentUrl={resolution.parentUrl}
+      />
+    );
+  }
 
-  return pages.map((page) => ({
-    slug: page.url.replace(/^\//, "").split("/").filter(Boolean),
-  }));
+  notFound();
 }
 ```
-
-> Pages not returned by `generateStaticParams` fall back to on-demand rendering. If the CMS has no matching page, `fetchPageByUrl` returns `null` and `notFound()` renders the 404 page.
 
 #### Dynamic Page Sections — `RenderSections` Component
 
@@ -303,23 +449,35 @@ export function RenderSections({ sections }: { sections: Section[] }) {
           case "cta":
             return <CtaSection key={section.id} content={section.content} />;
           case "service":
-            return <ServiceSection key={section.id} content={section.content} />;
+            return (
+              <ServiceSection key={section.id} content={section.content} />
+            );
           case "testimonial":
-            return <TestimonialSection key={section.id} content={section.content} />;
+            return (
+              <TestimonialSection key={section.id} content={section.content} />
+            );
           case "multi-value":
-            return <MultiValueSection key={section.id} content={section.content} />;
+            return (
+              <MultiValueSection key={section.id} content={section.content} />
+            );
           case "team":
             return <TeamSection key={section.id} content={section.content} />;
           case "clients":
-            return <ClientsSection key={section.id} content={section.content} />;
+            return (
+              <ClientsSection key={section.id} content={section.content} />
+            );
           case "gallery":
-            return <GallerySection key={section.id} content={section.content} />;
+            return (
+              <GallerySection key={section.id} content={section.content} />
+            );
           case "event":
             return <EventSection key={section.id} content={section.content} />;
           case "blog":
             return <BlogSection key={section.id} content={section.content} />;
           case "rich-content":
-            return <RichContentSection key={section.id} content={section.content} />;
+            return (
+              <RichContentSection key={section.id} content={section.content} />
+            );
           case "about":
             return <AboutSection key={section.id} content={section.content} />;
           case "faq":
@@ -338,22 +496,22 @@ export function RenderSections({ sections }: { sections: Section[] }) {
 
 Several section types only carry **display text** (headings, subtitles) in `section.content`. The actual entity data must be fetched separately and passed into the section component. This is the same pattern as services, blogs, and events — just applied inside individual section components.
 
-| Section name | `type` discriminant | Content type | Primary table/entity | API call(s) needed |
-|---|---|---|---|---|
-| Hero | `"hero"` | `HeroContent[]` | `page.sections` (from `page`) | None — content is inline |
-| Custom | `"custom"` | `CustomContent` | `page.sections` (from `page`) | None — content is inline |
-| Call to Action | `"cta"` | `CTAContent` | `page.sections` (from `page`) | None — content is inline |
-| Rich Content | `"rich-content"` | `RichContentSection` | `page.sections` (from `page`) | None — content is inline |
-| About | `"about"` | `AboutSection` | `page.sections` + `about-us` | `fetchAboutUs(siteId)` for profile/vision/mission/stats |
-| Multi Value | `"multi-value"` | `MultiValueSection` | `page.sections` (from `page`) | None — content is inline |
-| Services | `"service"` | `ServicesSection` | `services` | `fetchServices(siteId)` |
-| Testimonials | `"testimonial"` | `TestimonialsSection` | `testimonials` | `fetchTestimonials(siteId, { type })` — use `content.type` to filter |
-| Team | `"team"` | `TeamSection` | `team-members` | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, content.team_category_id)` |
-| FAQ | `"faq"` | `FaqSection` | `faq-groups` + `faqs` | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })` |
-| Clients / Brands | `"clients"` | `ClientsSection` | `brand-groups` + `brands` | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })` |
-| Gallery | `"gallery"` | `GallerySection` | `albums` + `album-items` | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed |
-| Events | `"event"` | `GenericSection` | `events` | `fetchEvents(siteId, { page, limit, search })` |
-| Blog | `"blog"` | `GenericSection` | `blog` | `fetchBlogs(siteId, { page, limit, search })` |
+| Section name     | `type` discriminant | Content type          | Primary table/entity          | API call(s) needed                                                                          |
+| ---------------- | ------------------- | --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
+| Hero             | `"hero"`            | `HeroContent[]`       | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Custom           | `"custom"`          | `CustomContent`       | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Call to Action   | `"cta"`             | `CTAContent`          | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Rich Content     | `"rich-content"`    | `RichContentSection`  | `page.sections` (from `page`) | None — content is inline                                                                    |
+| About            | `"about"`           | `AboutSection`        | `page.sections` + `about-us`  | `fetchAboutUs(siteId)` for profile/vision/mission/stats                                     |
+| Multi Value      | `"multi-value"`     | `MultiValueSection`   | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Services         | `"service"`         | `ServicesSection`     | `services`                    | `fetchServices(siteId)`                                                                     |
+| Testimonials     | `"testimonial"`     | `TestimonialsSection` | `testimonials`                | `fetchTestimonials(siteId, { type })` — use `content.type` to filter                        |
+| Team             | `"team"`            | `TeamSection`         | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, content.team_category_id)` |
+| FAQ              | `"faq"`             | `FaqSection`          | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`             |
+| Clients / Brands | `"clients"`         | `ClientsSection`      | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`    |
+| Gallery          | `"gallery"`         | `GallerySection`      | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
+| Events           | `"event"`           | `GenericSection`      | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
+| Blog             | `"blog"`            | `GenericSection`      | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
 
 **How to handle this in section components:**
 
@@ -418,13 +576,20 @@ export async function TeamSection({ content }: { content: TeamSection }) {
             {member.position && <p>{member.position}</p>}
             {member.socials && member.socials.length > 0 && (
               <ul>
-                {member.socials.map((s) => s.url && (
-                  <li key={s.platform}>
-                    <a href={s.url} target="_blank" rel="noopener noreferrer">
-                      {s.platform}
-                    </a>
-                  </li>
-                ))}
+                {member.socials.map(
+                  (s) =>
+                    s.url && (
+                      <li key={s.platform}>
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {s.platform}
+                        </a>
+                      </li>
+                    ),
+                )}
               </ul>
             )}
           </div>
@@ -450,9 +615,7 @@ export async function FaqSection({ content }: { content: FaqSection }) {
     ? groups.find((g) => g.id === content.group_id)
     : null;
 
-  const faqs = targetGroup
-    ? targetGroup.faqs
-    : await cms.fetchFaqs(SITE_ID);
+  const faqs = targetGroup ? targetGroup.faqs : await cms.fetchFaqs(SITE_ID);
 
   return (
     <section>
@@ -482,20 +645,21 @@ Different page types follow different rendering strategies. Understanding these 
 
 ### Page Fetch Map (Route -> Table/Entity -> SDK Fetch)
 
-| Route | Primary tables/entities | Required fetch call(s) |
-|---|---|---|
-| `/` (home) | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")` |
-| `[[...slug]]` CMS pages | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)` |
-| `/about` | `page` + `about-us` | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)` |
-| `/services` | `page` + `services` | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)` |
-| `/services/[slug]` | `services` | `fetchServices(siteId)` (find by slug) or `fetchServiceById(siteId, id)` |
-| `/blog` | `page` + `blog` | `fetchPageByUrl(siteId, "/blog")` + `fetchBlogs(siteId, params)` |
-| `/blog/[slug]` | `blog` | `fetchBlogs(siteId, { limit })` (slug lookup) + `fetchBlogById(siteId, id)` |
-| `/events` | `page` + `events` | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)` |
-| `/events/[slug]` | `events` | `fetchEvents(siteId, { limit })` (slug lookup) or `fetchEventById(siteId, id)` |
-| `/gallery` | `page` + `albums` | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)` |
-| `/gallery/[slug]` | `albums` + `album-items` | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })` |
-| `/contact` | `contact` (form submissions) | `submitContactForm(siteId, payload)` |
+| Route                   | Primary tables/entities           | Required fetch call(s)                                                         |
+| ----------------------- | --------------------------------- | ------------------------------------------------------------------------------ |
+| `/` (home)              | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")`                                                  |
+| `[[...slug]]` CMS pages | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)`                                              |
+| `/about`                | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                    |
+| `/services`             | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                |
+| `/services/[slug]`      | `services`                        | `fetchServices(siteId)` (slug lookup) or `fetchServiceById(siteId, id)`        |
+| `/blog`                 | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` + `fetchBlogs(siteId, params)`               |
+| `/blog/[slug]`          | `blog`                            | `fetchBlogs(siteId, { limit })` (slug lookup) + `fetchBlogById(siteId, id)`    |
+| `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`            |
+| `/events/[slug]`        | `events`                          | `fetchEvents(siteId, { limit })` (slug lookup) or `fetchEventById(siteId, id)` |
+| `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`           |
+| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })`  |
+| `/team/[slug]`          | `team-members`                    | `fetchTeamMembers(siteId)` (slug lookup) or custom `fetch`                     |
+| `/contact`              | `contact` (form submissions)      | `submitContactForm(siteId, payload)`                                           |
 
 ### Home Page — Section Rendering with Targeting
 
@@ -504,16 +668,14 @@ The home page is a CMS-managed page (`page_type: "home"`). It uses `RenderSectio
 **Option A — target by section type and index:**
 
 ```tsx
-// app/page.tsx
+// components/pages/HomePage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { HeroSection } from "@/components/sections/hero";
 import { RenderSections } from "@/components/render-sections";
+import type { Page } from "@crayons/cms-sdk";
 
-export default async function HomePage() {
-  const page = await cms.fetchPageByUrl(SITE_ID, "/");
-  if (!page) notFound();
-
+export default async function HomePage({ page }: { page: Page }) {
   const { sections } = page;
 
   // Pull specific sections out by type for precise placement
@@ -523,9 +685,7 @@ export default async function HomePage() {
   return (
     <>
       {/* Render the first hero section at the top of the page */}
-      {heroSections[0] && (
-        <HeroSection content={heroSections[0].content} />
-      )}
+      {heroSections[0] && <HeroSection content={heroSections[0].content} />}
 
       {/* Your own custom UI can go here between sections */}
 
@@ -565,22 +725,26 @@ The CMS editor controls the order and content of all sections. Your job is to ma
 ### About Us Page — Page Sections + About Data
 
 About pages usually combine:
+
 - **Page-managed section chrome** (`section_heading`, `title`, CTA labels) from `fetchPageByUrl("/about")`
 - **Actual about content** (company profile, vision, mission, stats, values) from `fetchAboutUs`
 
 ```tsx
-// app/about/page.tsx
+// components/pages/AboutPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import SafeHtml from "@/components/safe-html";
+import type { Page, SiteConfig } from "@crayons/cms-sdk";
 
-export default async function AboutPage() {
-  const [page, about] = await Promise.all([
-    cms.fetchPageByUrl(SITE_ID, "/about"),
-    cms.fetchAboutUs(SITE_ID),
-  ]);
-
-  if (!page || !about) notFound();
+export default async function AboutPage({
+  page,
+  site,
+}: {
+  page: Page;
+  site?: SiteConfig | null;
+}) {
+  const about = await cms.fetchAboutUs(SITE_ID);
+  if (!about) notFound();
 
   const aboutSection = page.sections.find((s) => s.type === "about");
 
@@ -633,18 +797,14 @@ export default async function AboutPage() {
 The `service` section type on a page provides only CMS-controlled **headings and labels** (e.g. `section_heading`, `title`, `subtitle`). The actual list of services must be fetched separately with `fetchServices`.
 
 ```tsx
-// app/services/page.tsx
+// components/pages/ServicesPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { ServiceCard } from "@/components/service-card";
+import type { Page } from "@crayons/cms-sdk";
 
-export default async function ServicesPage() {
-  const [page, services] = await Promise.all([
-    cms.fetchPageByUrl(SITE_ID, "/services"),
-    cms.fetchServices(SITE_ID),
-  ]);
-
-  if (!page) notFound();
+export default async function ServicesPage({ page }: { page: Page }) {
+  const services = await cms.fetchServices(SITE_ID);
 
   // The "service" section from the page carries the heading/subtitle
   const serviceSection = page.sections.find((s) => s.type === "service");
@@ -673,14 +833,16 @@ export default async function ServicesPage() {
 **Service detail page:**
 
 ```tsx
-// app/services/[slug]/page.tsx
+// components/pages/ServiceDetailPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 
 export default async function ServiceDetailPage({
   params,
+  parentUrl,
 }: {
   params: Promise<{ slug: string }>;
+  parentUrl?: string;
 }) {
   const { slug } = await params;
   const services = await cms.fetchServices(SITE_ID);
@@ -717,18 +879,14 @@ The `blog` section type carries heading/subtitle text only. Fetch the actual pos
 **Listing page:**
 
 ```tsx
-// app/blog/page.tsx
+// components/pages/BlogPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { Page } from "@crayons/cms-sdk";
 
-export default async function BlogPage() {
-  const [page, { data: blogs }] = await Promise.all([
-    cms.fetchPageByUrl(SITE_ID, "/blog"),
-    cms.fetchBlogs(SITE_ID, { page: 1, limit: 12 }),
-  ]);
-
-  if (!page) notFound();
+export default async function BlogPage({ page }: { page: Page }) {
+  const { data: blogs } = await cms.fetchBlogs(SITE_ID, { page: 1, limit: 12 });
 
   const blogSection = page.sections.find((s) => s.type === "blog");
 
@@ -739,7 +897,9 @@ export default async function BlogPage() {
       <div className="grid">
         {blogs.map((blog) => (
           <Link key={blog.id} href={`/blog/${blog.slug}`}>
-            {blog.image_url && <img src={blog.image_url} alt={blog.image_alt ?? blog.title} />}
+            {blog.image_url && (
+              <img src={blog.image_url} alt={blog.image_alt ?? blog.title} />
+            )}
             <h2>{blog.title}</h2>
             {blog.excerpt && <p>{blog.excerpt}</p>}
           </Link>
@@ -754,7 +914,9 @@ export default async function BlogPage() {
 
 ```tsx
 // Search — pass the query as a param
-const { data: results } = await cms.fetchBlogs(SITE_ID, { search: searchQuery });
+const { data: results } = await cms.fetchBlogs(SITE_ID, {
+  search: searchQuery,
+});
 
 // Category filtering — fetch categories then filter client-side, or show per-category pages
 const categories = await cms.fetchCategories(SITE_ID);
@@ -766,7 +928,7 @@ const categories = await cms.fetchCategories(SITE_ID);
 **Blog detail page:**
 
 ```tsx
-// app/blog/[slug]/page.tsx
+// components/pages/BlogDetailPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 
@@ -787,7 +949,9 @@ export default async function BlogDetailPage({
 
   return (
     <article>
-      {full.image_url && <img src={full.image_url} alt={full.image_alt ?? full.title} />}
+      {full.image_url && (
+        <img src={full.image_url} alt={full.image_alt ?? full.title} />
+      )}
       <h1>{full.title}</h1>
       <p>By {full.author}</p>
       {full.description && (
@@ -807,24 +971,31 @@ Same pattern as blogs. The `event` section carries display text; actual event da
 **Listing page:**
 
 ```tsx
-// app/events/page.tsx
+// components/pages/EventPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { Page, SiteConfig } from "@crayons/cms-sdk";
 
-export default async function EventsPage() {
-  const [page, { data: events }] = await Promise.all([
-    cms.fetchPageByUrl(SITE_ID, "/events"),
-    cms.fetchEvents(SITE_ID, { page: 1, limit: 12 }),
-  ]);
-
-  if (!page) notFound();
+export default async function EventsPage({
+  page,
+  site,
+}: {
+  page: Page;
+  site?: SiteConfig | null;
+}) {
+  const { data: events } = await cms.fetchEvents(SITE_ID, {
+    page: 1,
+    limit: 12,
+  });
 
   return (
     <div>
       {events.map((event) => (
         <Link key={event.id} href={`/events/${event.slug}`}>
-          {event.image_url && <img src={event.image_url} alt={event.image_alt ?? event.title} />}
+          {event.image_url && (
+            <img src={event.image_url} alt={event.image_alt ?? event.title} />
+          )}
           <h2>{event.title}</h2>
           <time>{event.start_date}</time>
           {event.location_name && <p>{event.location_name}</p>}
@@ -839,7 +1010,7 @@ export default async function EventsPage() {
 **Event detail page:**
 
 ```tsx
-// app/events/[slug]/page.tsx
+// components/pages/EventDetailPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 
@@ -856,7 +1027,9 @@ export default async function EventDetailPage({
 
   return (
     <article>
-      {event.image_url && <img src={event.image_url} alt={event.image_alt ?? event.title} />}
+      {event.image_url && (
+        <img src={event.image_url} alt={event.image_alt ?? event.title} />
+      )}
       <h1>{event.title}</h1>
       <time>{event.start_date}</time>
       {event.end_date && <time> – {event.end_date}</time>}
@@ -877,25 +1050,24 @@ export default async function EventDetailPage({
 The `gallery` section carries the `album_id` to display. Fetch albums with `fetchAlbums`; each album includes its `items` (photos).
 
 ```tsx
-// app/gallery/page.tsx
+// components/pages/GalleryPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { Page } from "@crayons/cms-sdk";
 
-export default async function GalleryPage() {
-  const [page, { data: albums }] = await Promise.all([
-    cms.fetchPageByUrl(SITE_ID, "/gallery"),
-    cms.fetchAlbums(SITE_ID),
-  ]);
-
-  if (!page) notFound();
+export default async function GalleryPage({ page }: { page: Page }) {
+  const { data: albums } = await cms.fetchAlbums(SITE_ID);
 
   return (
     <div className="grid">
       {albums.map((album) => (
         <Link key={album.id} href={`/gallery/${album.slug}`}>
           {album.cover_image_url && (
-            <img src={album.cover_image_url} alt={album.cover_image_alt ?? album.title} />
+            <img
+              src={album.cover_image_url}
+              alt={album.cover_image_alt ?? album.title}
+            />
           )}
           <h2>{album.title}</h2>
           {album.description && <p>{album.description}</p>}
@@ -909,7 +1081,7 @@ export default async function GalleryPage() {
 **Album detail page:**
 
 ```tsx
-// app/gallery/[slug]/page.tsx
+// components/pages/GalleryDetailPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 
@@ -949,10 +1121,17 @@ export default async function AlbumDetailPage({
 The contact page does **not** use `RenderSections`. It is a dedicated form page that submits directly to the CMS via `submitContactForm`. Do not render CMS sections here — just build your form UI and wire it to the SDK.
 
 ```tsx
-// app/contact/page.tsx  (server component — renders the form shell)
+// components/pages/ContactPage.tsx
 import { ContactForm } from "@/components/contact-form";
+import type { Page, SiteConfig } from "@crayons/cms-sdk";
 
-export default function ContactPage() {
+export default function ContactPage({
+  page,
+  site,
+}: {
+  page: Page;
+  site?: SiteConfig | null;
+}) {
   return (
     <main>
       <h1>Contact Us</h1>
@@ -970,7 +1149,9 @@ import { useState } from "react";
 import type { ContactPayload } from "@crayons/cms-sdk";
 
 export function ContactForm() {
-  const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "sending" | "success" | "error"
+  >("idle");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -981,7 +1162,8 @@ export function ContactForm() {
       name: (form.elements.namedItem("name") as HTMLInputElement).value,
       email: (form.elements.namedItem("email") as HTMLInputElement).value,
       subject: (form.elements.namedItem("subject") as HTMLInputElement).value,
-      message: (form.elements.namedItem("message") as HTMLTextAreaElement).value,
+      message: (form.elements.namedItem("message") as HTMLTextAreaElement)
+        .value,
       type: "contact",
     };
 
@@ -1100,12 +1282,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!blog) return { title: "Not Found" };
 
   return {
-    title: blog.seo_title ? `${blog.seo_title} | ${siteName}` : `${blog.title} | ${siteName}`,
+    title: blog.seo_title
+      ? `${blog.seo_title} | ${siteName}`
+      : `${blog.title} | ${siteName}`,
     description: blog.seo_description ?? blog.excerpt ?? undefined,
     openGraph: {
       title: blog.seo_title ?? blog.title,
       description: blog.seo_description ?? blog.excerpt ?? undefined,
-      images: blog.seo_image ? [{ url: blog.seo_image }] : blog.image_url ? [{ url: blog.image_url }] : undefined,
+      images: blog.seo_image
+        ? [{ url: blog.seo_image }]
+        : blog.image_url
+          ? [{ url: blog.image_url }]
+          : undefined,
     },
   };
 }
@@ -1144,57 +1332,59 @@ export default nextConfig;
 
 ## Recommended Project Structure
 
-Below is the folder layout that maps cleanly to how this SDK is used:
+Align your project structure to handle CMS data efficiently using Server Components and the declarative registry pattern.
 
 ```
 app/
-├── layout.tsx                  # Root layout — fetches header, footer, siteConfig
-├── page.tsx                    # Home page — fetchPageByUrl("/")
 ├── [[...slug]]/
-│   └── page.tsx                # Catch-all for CMS custom pages
-├── blog/
-│   ├── page.tsx                # Blog listing — fetchBlogs
-│   └── [slug]/page.tsx         # Blog detail — fetchBlogById
-├── services/
-│   ├── page.tsx                # Services listing — fetchServices
-│   └── [slug]/page.tsx         # Service detail
-├── events/
-│   ├── page.tsx                # Events listing — fetchEvents
-│   └── [slug]/page.tsx         # Event detail
-├── gallery/
-│   ├── page.tsx                # Albums listing — fetchAlbums
-│   └── [slug]/page.tsx         # Album detail
-└── contact/
-    └── page.tsx                # Contact form — submitContactForm (no sections)
-
+│   └── page.tsx                # Catch-all handles EVERYTHING
+├── layout.tsx                  # Root layout — fetches header, footer, siteConfig
+├── api/
+│   └── contact/
+│       └── route.ts            # Server route for form submission
 components/
-├── site-header.tsx             # Renders Header + SiteConfig (nav, CTAs, logo)
-├── site-footer.tsx             # Renders Footer + SiteConfig (nav groups, contact, socials)
-├── render-sections.tsx         # Maps Section[] → section components
-├── contact-form.tsx            # Client component — POSTs to /api/contact
-└── sections/
-    ├── hero.tsx
-    ├── custom.tsx
-    ├── cta.tsx
-    ├── service.tsx             # Fetches fetchServices internally
-    ├── testimonial.tsx         # Fetches fetchTestimonials internally
-    ├── team.tsx                # Fetches fetchTeamMembers internally
-    ├── faq.tsx                 # Fetches fetchFaqGroups internally
-    ├── clients.tsx             # Fetches brands internally
-    ├── gallery.tsx             # Fetches fetchAlbums internally
-    ├── event.tsx               # Fetches fetchEvents internally
-    ├── blog.tsx                # Fetches fetchBlogs internally
-    ├── rich-content.tsx
-    ├── about.tsx
-    └── multi-value.tsx
-
+├── pages/                      # Registry-mapped page layouts
+│   ├── HomePage.tsx
+│   ├── AboutPage.tsx
+│   ├── BlogPage.tsx
+│   ├── BlogDetailPage.tsx
+│   ├── ServicesPage.tsx
+│   ├── ServiceDetailPage.tsx
+│   ├── EventPage.tsx
+│   ├── EventDetailPage.tsx
+│   ├── GalleryPage.tsx
+│   ├── GalleryDetailPage.tsx
+│   ├── TeamPage.tsx
+│   ├── TeamCategoryPage.tsx
+│   ├── TeamMemberDetailPage.tsx
+│   ├── ProductsPage.tsx
+│   ├── ProductDetailPage.tsx
+│   ├── ContactPage.tsx
+│   └── CustomPage.tsx
+├── sections/                   # Individual Section components
+│   ├── hero.tsx
+│   ├── custom.tsx
+│   ├── cta.tsx
+│   ├── service.tsx             # Fetches fetchServices internally
+│   ├── testimonial.tsx         # Fetches fetchTestimonials internally
+│   ├── team.tsx                # Fetches fetchTeamMembers internally
+│   ├── faq.tsx                 # Fetches fetchFaqGroups internally
+│   ├── clients.tsx             # Fetches brands internally
+│   ├── gallery.tsx             # Fetches fetchAlbums internally
+│   ├── event.tsx               # Fetches fetchEvents internally
+│   ├── blog.tsx                # Fetches fetchBlogs internally
+│   ├── rich-content.tsx
+│   ├── about.tsx               # Fetches fetchAboutUs internally
+│   ├── multi-value.tsx
+│   └── contact-form.tsx        # Client component (form only)
+└── render-sections.tsx         # The section dispatcher
 lib/
-└── cms.ts                      # Singleton CMS client + SITE_ID export
-
-api/
-└── contact/
-    └── route.ts                # Server route — calls submitContactForm
+├── cms.ts                      # Client initialization (singleton)
+├── cms-registry.ts             # Component mapping (PAGE_COMPONENT_MAP)
+└── cms-router.ts               # Route resolution logic (resolveCmsRoute)
 ```
+
+> **Note**: This structure eliminates the need for hardcoded folders for `/blog`, `/services`, etc.
 
 > All `sections/` components that need live data are **async server components**. The `contact-form.tsx` is the only client component (`"use client"`).
 
@@ -1249,10 +1439,14 @@ export interface FetchOptions extends RequestInit {
 ### Other Entities
 
 - `fetchServices(siteId, options?)`: Returns all services.
+- `fetchServiceById(siteId, id, options?)`: Returns a single service by ID.
 - `fetchTeamMembers(siteId, options?)`: Returns all team members.
+- `fetchTeamMembersByCategory(siteId, categoryId, options?)`: Returns team members filtered by category.
 - `fetchTestimonials(siteId, params?, options?)`: Returns testimonials. Params: `{ type: 'testimonial' | 'review' }`.
 - `fetchEvents(siteId, params?, options?)`: Returns paginated events.
+- `fetchEventById(siteId, id, options?)`: Returns a single event by ID.
 - `fetchAlbums(siteId, params?, options?)`: Returns paginated albums.
+- `fetchAlbumItems(siteId, params, options?)`: Returns items for an album. Params: `{ album, album_id }`.
 
 ### FAQ & Help
 
@@ -1321,19 +1515,19 @@ Each such field is annotated with `@remarks Rendered as HTML` in its type defini
 
 **Fields that contain HTML:**
 
-| Type | Field | Notes |
-|------|-------|-------|
-| `HeroContent` | `description` | Hero slide body copy |
-| `CustomContent` | `card_content` | Main body of a custom card |
-| `CustomContent` | `subtitle` | Secondary copy line (optional) |
-| `CTAContent` | `description` | CTA section body copy |
-| `MultiValueSection` | `description` | Section-level intro text |
-| `MultiValueItem` | `description` | Per-item description |
-| `RichContentSection` | `content` | Full rich-text article body |
-| `Faq` | `answer` | FAQ answer (supports lists, links) |
-| `Blog` | `description` | Full blog post body |
-| `Service` | `description` | Full service detail body |
-| `Event` | `description` | Full event detail body |
+| Type                 | Field          | Notes                              |
+| -------------------- | -------------- | ---------------------------------- |
+| `HeroContent`        | `description`  | Hero slide body copy               |
+| `CustomContent`      | `card_content` | Main body of a custom card         |
+| `CustomContent`      | `subtitle`     | Secondary copy line (optional)     |
+| `CTAContent`         | `description`  | CTA section body copy              |
+| `MultiValueSection`  | `description`  | Section-level intro text           |
+| `MultiValueItem`     | `description`  | Per-item description               |
+| `RichContentSection` | `content`      | Full rich-text article body        |
+| `Faq`                | `answer`       | FAQ answer (supports lists, links) |
+| `Blog`               | `description`  | Full blog post body                |
+| `Service`            | `description`  | Full service detail body           |
+| `Event`              | `description`  | Full event detail body             |
 
 ## Error Handling
 
