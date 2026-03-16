@@ -1731,3 +1731,74 @@ if (!services || services.length === 0) return <p>No services found.</p>;
 
 - **Site ID**: Always ensure your `SITE_ID` is valid, as most methods require it.
 - **Async Components**: Always use `await` when calling SDK methods inside Server Components.
+
+---
+
+## Full Data Flow — How Everything Connects
+
+This is the complete picture of how a page request travels through the system from the browser to the screen.
+
+### Step 1 — Browser makes a request
+
+A user visits any URL, e.g. `/services` or `/blog/my-post`. Next.js routes every request to the single catch-all file: `app/[[...slug]]/page.tsx`.
+
+### Step 2 — Catch-all fetches the pages list
+
+The first thing the catch-all does is call `fetchPages(siteId)`. This returns every page that exists in the CMS — each page has a `url` (e.g. `/services`) and a `page_type` (e.g. `"services"`). The catch-all uses this list to figure out what to render.
+
+### Step 3 — URL is matched to a page
+
+The catch-all compares the incoming URL against the pages list:
+
+- **Exact match** (`/services` → finds the `services` page) → this is a listing page.
+- **Parent match** (`/services/web-design` → parent `/services` found) → this is a detail page.
+- **No match** → `notFound()`.
+
+### Step 4 — Page data is passed to the right component
+
+Once a match is found, the catch-all looks up the correct page component from a registry (`PAGE_COMPONENT_MAP`) using `page_type`. It then renders that component, passing the matched `page` object along with `params`, `searchParams`, and `allPages` so the component has everything it might need.
+
+Detail pages (e.g. a single blog post) skip the `page` prop and receive `params` (containing the item slug) and `parentUrl` instead.
+
+### Step 5 — Page component fetches its own entity data
+
+The page component receives the `page` object which contains the **section chrome** (headings, subtitles, labels) for that page. It then calls its own API to get the actual content:
+
+- `ServicesPage` calls `fetchServices(siteId)` to get the list of services.
+- `BlogsPage` calls `fetchBlogs(siteId, { page, limit })` with pagination from `searchParams`.
+- `EventsPage` calls `fetchEvents(siteId, { page, limit })`.
+- `GalleryPage` calls `fetchAlbums(siteId)`.
+- `AboutPage` calls `fetchAboutUs(siteId)` for mission, vision, values.
+- `HomePage` and `CustomPage` skip their own fetch — they already have `allPages` and just find their page from it.
+
+Detail pages (e.g. `BlogDetailPage`) fetch the full list, find the matching item by slug, then call the single-item fetch (e.g. `fetchBlogById`) to get the complete data.
+
+### Step 6 — Sections are rendered
+
+The page component passes `page.sections` to `RenderSections` (or `SectionRenderer`). This maps each section's `type` to its component:
+
+- Sections like `hero`, `cta`, `custom`, `rich-content`, `multi-value`, and `about` render **inline** — all their content is already inside `section.content`, no extra fetch needed.
+- Sections like `service`, `testimonial`, `team`, `faq`, `clients`, `gallery`, `event`, and `blog` only have heading/subtitle text in `section.content`. The section component fetches its own data (e.g. `TeamSection` calls `fetchTeamMembers`).
+
+### Step 7 — HTML fields are sanitized and rendered
+
+Some fields (`description`, `content`, `answer`, etc.) contain **HTML markup** from the CMS rich-text editor. These must be passed to `dangerouslySetInnerHTML` — always sanitize them with DOMPurify first. Fields that contain HTML are marked with a comment in their type definitions.
+
+### Step 8 — Layout wraps everything
+
+The root `layout.tsx` runs on every request independently of the catch-all. It calls `fetchHeader`, `fetchFooter`, and `fetchSiteConfig` once and wraps the rendered page in the site's navigation and footer.
+
+---
+
+### Summary in one line per step
+
+| Step | What happens |
+|------|-------------|
+| 1 | Browser hits any URL → Next.js sends it to `[[...slug]]/page.tsx` |
+| 2 | Catch-all fetches the full pages list from the CMS |
+| 3 | URL is matched to a CMS page (exact) or its parent (detail) |
+| 4 | Matched page data is passed to the right page component via a registry |
+| 5 | Page component fetches its own entity data (services, blogs, events, etc.) |
+| 6 | `page.sections` is passed to `RenderSections`; data-driven sections fetch their own data |
+| 7 | Rich-text HTML fields are sanitized (DOMPurify) before rendering |
+| 8 | Root layout independently fetches header, footer, and site config |
