@@ -16,6 +16,11 @@ import type { Event } from "../types/event";
 import type { Faq } from "../types/faq";
 import type { FaqGroup } from "../types/faq-group";
 import type { ContactPayload, Contact } from "../types/contact";
+import type { Product, ProductVariant } from "../types/product";
+import type { ProductCategory } from "../types/product-category";
+import type { ProductBrand } from "../types/product-brand";
+import type { Collection } from "../types/collection";
+import type { Order, PlaceOrderPayload } from "../types/order";
 
 export interface FetchOptions extends RequestInit {
   revalidate?: number;
@@ -571,6 +576,123 @@ export function createCmsClient(config: CmsClientConfig) {
     return result ?? [];
   }
 
+  // ============================================================================
+  // Store — Products, Categories, Brands, Collections, Orders
+  // Note: Uses /api/public/store/ prefix (NOT /api/public/cms/)
+  // ============================================================================
+
+  async function fetchProductCategories(
+    siteId: string,
+    options?: FetchOptions,
+  ): Promise<ProductCategory[]> {
+    const result = await cmsFetch<ProductCategory[]>(
+      `/api/public/store/${siteId}/categories/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["product-categories"],
+        ...options,
+      },
+    );
+    return result ?? [];
+  }
+
+  async function fetchProductBrands(
+    siteId: string,
+    options?: FetchOptions,
+  ): Promise<ProductBrand[]> {
+    const result = await cmsFetch<ProductBrand[]>(
+      `/api/public/store/${siteId}/brands/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["product-brands"],
+        ...options,
+      },
+    );
+    return result ?? [];
+  }
+
+  function fetchProducts(
+    siteId: string,
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      category_id?: string;
+      brand_id?: string;
+      is_featured?: "true" | "false";
+    } = {},
+    options?: FetchOptions,
+  ): Promise<PaginatedResponse<Product>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<Product>(
+      `/api/public/store/${siteId}/products/?${query}`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["products"],
+        ...options,
+      },
+    );
+  }
+
+  function fetchProductDetail(
+    siteId: string,
+    slug: string,
+    options?: FetchOptions,
+  ): Promise<Product | null> {
+    return cmsFetch<Product>(
+      `/api/public/store/${siteId}/products/${slug}/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["products", `product-${slug}`],
+        ...options,
+      },
+    );
+  }
+
+  async function fetchCollections(
+    siteId: string,
+    options?: FetchOptions,
+  ): Promise<Collection[]> {
+    const result = await cmsFetch<Collection[]>(
+      `/api/public/store/${siteId}/collections/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["collections"],
+        ...options,
+      },
+    );
+    return result ?? [];
+  }
+
+  function fetchCollectionDetail(
+    siteId: string,
+    slug: string,
+    options?: FetchOptions,
+  ): Promise<Collection | null> {
+    return cmsFetch<Collection>(
+      `/api/public/store/${siteId}/collections/${slug}/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["collections", `collection-${slug}`],
+        ...options,
+      },
+    );
+  }
+
+  function placeOrder(
+    siteId: string,
+    payload: PlaceOrderPayload,
+    options?: FetchOptions,
+  ): Promise<Order | null> {
+    return cmsFetch<Order>(`/api/public/store/${siteId}/orders/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      revalidate: CACHE.NO_CACHE,
+      ...options,
+    });
+  }
+
   return {
     // Header, Footer, Site Config
     fetchHeader,
@@ -608,6 +730,14 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchFaqs,
     // Contact
     submitContactForm,
+    // Store
+    fetchProductCategories,
+    fetchProductBrands,
+    fetchProducts,
+    fetchProductDetail,
+    fetchCollections,
+    fetchCollectionDetail,
+    placeOrder,
     // Generic fetch utilities
     fetch: cmsFetch,
     fetchPaginated: cmsFetchPaginated,

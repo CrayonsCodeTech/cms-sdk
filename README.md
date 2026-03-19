@@ -1239,6 +1239,720 @@ export async function POST(req: Request) {
 
 ---
 
+## Store
+
+The store is a separate product/e-commerce layer built on top of the CMS. It uses a completely different API prefix (`/api/public/store/`) and its routes are **hardcoded in the catch-all** — they are not CMS-managed pages.
+
+### Overview
+
+| Concern | CMS | Store |
+|---|---|---|
+| API prefix | `/api/public/cms/{siteId}/` | `/api/public/store/{siteId}/` |
+| Route management | CMS dashboard (page_type) | Hardcoded in `[[...slug]]` |
+| Content editing | Via CMS | Via store admin |
+
+**Feature flag** — gate all store UI behind a constant so it can be disabled per project:
+
+```ts
+// config/store.ts
+export const STORE_ENABLED = true;
+```
+
+---
+
+### Store Types
+
+| File | Exports |
+|---|---|
+| `product.ts` | `Product`, `ProductVariant`, `ProductImage`, `ProductStatus` |
+| `product-category.ts` | `ProductCategory` |
+| `product-brand.ts` | `ProductBrand` |
+| `collection.ts` | `Collection`, `CollectionItem` |
+| `order.ts` | `Order`, `OrderItem`, `ShippingAddress`, `PlaceOrderPayload`, `CartItem`, `OrderStatus` |
+
+```ts
+import type {
+  Product,
+  ProductVariant,
+  ProductCategory,
+  ProductBrand,
+  Collection,
+  CollectionItem,
+  Order,
+  PlaceOrderPayload,
+  CartItem,
+} from "@crayons/cms-sdk";
+```
+
+> `Product.description` is HTML — render with `dangerouslySetInnerHTML`. `variants` is only present on `fetchProductDetail`, not on the list response.
+
+---
+
+### Route Structure
+
+Store routes are top-level and handled before CMS page resolution in `[[...slug]]/page.tsx`:
+
+```
+/products               → product listing
+/products/[slug]        → product detail
+/categories             → all categories
+/categories/[slug]      → products filtered by category
+/brands                 → all brands
+/brands/[slug]          → products filtered by brand
+/collections            → all collections
+/collections/[slug]     → collection detail + its products
+```
+
+**Catch-all integration — handle store routes first:**
+
+```tsx
+// app/[[...slug]]/page.tsx
+import { STORE_ENABLED } from "@/config/store";
+import ProductsPage from "@/components/pages/ProductsPage";
+import ProductDetailPage from "@/components/pages/ProductDetailPage";
+import ProductCategoriesPage from "@/components/pages/ProductCategoriesPage";
+import CategoryProductsPage from "@/components/pages/CategoryProductsPage";
+import BrandsPage from "@/components/pages/BrandsPage";
+import BrandProductsPage from "@/components/pages/BrandProductsPage";
+import CollectionsPage from "@/components/pages/CollectionsPage";
+import CollectionDetailPage from "@/components/pages/CollectionDetailPage";
+
+export default async function CatchAll({ params, searchParams }) {
+  const { slug = [] } = await params;
+
+  // ── Store routes (resolved before CMS pages) ──────────────────────────────
+  if (!STORE_ENABLED && ["products","categories","brands","collections"].includes(slug[0])) {
+    notFound();
+  }
+
+  if (slug[0] === "products") {
+    if (slug.length === 1) return <ProductsPage searchParams={searchParams} />;
+    return <ProductDetailPage params={Promise.resolve({ slug: slug[1] })} />;
+  }
+
+  if (slug[0] === "categories") {
+    if (slug.length === 1) return <ProductCategoriesPage />;
+    return <CategoryProductsPage params={Promise.resolve({ slug: slug[1] })} searchParams={searchParams} />;
+  }
+
+  if (slug[0] === "brands") {
+    if (slug.length === 1) return <BrandsPage />;
+    return <BrandProductsPage params={Promise.resolve({ slug: slug[1] })} searchParams={searchParams} />;
+  }
+
+  if (slug[0] === "collections") {
+    if (slug.length === 1) return <CollectionsPage />;
+    return <CollectionDetailPage params={Promise.resolve({ slug: slug[1] })} />;
+  }
+
+  // ── CMS pages (catch-all continues below) ────────────────────────────────
+  // ... resolveCmsRoute / fetchPageByUrl logic
+}
+```
+
+---
+
+### Products Page
+
+```tsx
+// components/pages/ProductsPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import type { Product, ProductCategory } from "@crayons/cms-sdk";
+import Link from "next/link";
+
+interface Props {
+  searchParams: Promise<{ page?: string; search?: string; category_id?: string }>;
+}
+
+export default async function ProductsPage({ searchParams }: Props) {
+  const { page = "1", search, category_id } = await searchParams;
+
+  const [{ data: products, pagination }, categories] = await Promise.all([
+    cms.fetchProducts(SITE_ID, {
+      page: Number(page),
+      limit: 12,
+      search,
+      category_id,
+    }),
+    cms.fetchProductCategories(SITE_ID),
+  ]);
+
+  return (
+    <div>
+      {/* Category filter tabs */}
+      <nav>
+        <Link href="/products">All</Link>
+        {categories.map((cat) => (
+          <Link key={cat.id} href={`/products?category_id=${cat.id}`}>
+            {cat.name}
+          </Link>
+        ))}
+      </nav>
+
+      {/* Product grid */}
+      <div className="grid">
+        {products.map((product) => (
+          <Link key={product.id} href={`/products/${product.slug}`}>
+            {product.thumbnail_url && (
+              <img src={product.thumbnail_url} alt={product.name} />
+            )}
+            <h2>{product.name}</h2>
+            {product.subtitle && <p>{product.subtitle}</p>}
+            {product.is_featured && <span>Featured</span>}
+          </Link>
+        ))}
+      </div>
+
+      {/* Pagination */}
+      <p>Page {pagination.page} of {pagination.totalPages}</p>
+    </div>
+  );
+}
+```
+
+---
+
+### Product Detail Page
+
+The detail page is split into a **server component** (data fetch) and a **client component** (interactivity — variant selection, cart). `variants` is only returned by `fetchProductDetail`, not the list endpoint.
+
+```tsx
+// components/pages/ProductDetailPage.tsx  (server component)
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import ProductDetailClient from "@/components/store/ProductDetailClient";
+
+export default async function ProductDetailPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const product = await cms.fetchProductDetail(SITE_ID, slug);
+
+  if (!product) notFound();
+
+  return <ProductDetailClient product={product} />;
+}
+```
+
+```tsx
+// components/store/ProductDetailClient.tsx  (client component)
+"use client";
+
+import { useState } from "react";
+import type { Product, ProductVariant } from "@crayons/cms-sdk";
+import { useCart } from "@/context/CartContext";
+
+export default function ProductDetailClient({ product }: { product: Product }) {
+  const { addItem } = useCart();
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(
+    product.variants?.[0] ?? null
+  );
+  const [quantity, setQuantity] = useState(1);
+
+  function handleAddToCart() {
+    if (!selectedVariant) return;
+    addItem(product, selectedVariant, quantity);
+  }
+
+  return (
+    <article>
+      {product.thumbnail_url && (
+        <img src={product.thumbnail_url} alt={product.name} />
+      )}
+      <h1>{product.name}</h1>
+      {product.subtitle && <p>{product.subtitle}</p>}
+
+      {/* Variant selector */}
+      {product.variants && product.variants.length > 0 && (
+        <div>
+          {product.variants.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => setSelectedVariant(v)}
+              aria-pressed={selectedVariant?.id === v.id}
+            >
+              {v.name ?? v.sku} — ${v.sale_price ?? v.price}
+              {v.inventory === 0 && " (Out of stock)"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Quantity + add to cart */}
+      <div>
+        <button onClick={() => setQuantity((q) => Math.max(1, q - 1))}>-</button>
+        <span>{quantity}</span>
+        <button onClick={() => setQuantity((q) => q + 1)}>+</button>
+      </div>
+      <button
+        onClick={handleAddToCart}
+        disabled={!selectedVariant || selectedVariant.inventory === 0}
+      >
+        Add to Cart
+      </button>
+
+      {/* Rich-text description */}
+      <div dangerouslySetInnerHTML={{ __html: product.description }} />
+
+      {/* Variant specs */}
+      {selectedVariant?.specifications &&
+        Object.entries(selectedVariant.specifications).map(([group, specs]) => (
+          <div key={group}>
+            <h3>{group}</h3>
+            {Object.entries(specs).map(([k, v]) => (
+              <p key={k}><strong>{k}:</strong> {v}</p>
+            ))}
+          </div>
+        ))}
+    </article>
+  );
+}
+```
+
+---
+
+### Categories Page
+
+```tsx
+// components/pages/ProductCategoriesPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import Link from "next/link";
+
+export default async function ProductCategoriesPage() {
+  const categories = await cms.fetchProductCategories(SITE_ID);
+
+  return (
+    <div className="grid">
+      {categories.map((cat) => (
+        <Link key={cat.id} href={`/categories/${cat.slug}`}>
+          {cat.image_url && <img src={cat.image_url} alt={cat.name} />}
+          <h2>{cat.name}</h2>
+          {cat.description && <p>{cat.description}</p>}
+        </Link>
+      ))}
+    </div>
+  );
+}
+```
+
+**Category detail page — products filtered by category:**
+
+```tsx
+// components/pages/CategoryProductsPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+
+interface Props {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ page?: string; search?: string }>;
+}
+
+export default async function CategoryProductsPage({ params, searchParams }: Props) {
+  const { slug } = await params;
+  const { page = "1", search } = await searchParams;
+
+  // Resolve category_id from slug
+  const categories = await cms.fetchProductCategories(SITE_ID);
+  const category = categories.find((c) => c.slug === slug);
+  if (!category) notFound();
+
+  const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
+    category_id: category.id,
+    page: Number(page),
+    limit: 12,
+    search,
+  });
+
+  return (
+    <div>
+      <h1>{category.name}</h1>
+      {category.description && <p>{category.description}</p>}
+
+      <div className="grid">
+        {products.map((product) => (
+          <Link key={product.id} href={`/products/${product.slug}`}>
+            {product.thumbnail_url && (
+              <img src={product.thumbnail_url} alt={product.name} />
+            )}
+            <h2>{product.name}</h2>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+### Brands Page
+
+```tsx
+// components/pages/BrandsPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import Link from "next/link";
+
+export default async function BrandsPage() {
+  const brands = await cms.fetchProductBrands(SITE_ID);
+
+  return (
+    <div className="grid">
+      {brands.map((brand) => (
+        <Link key={brand.id} href={`/brands/${brand.slug}`}>
+          {brand.logo_url && <img src={brand.logo_url} alt={brand.name} />}
+          <h2>{brand.name}</h2>
+          {brand.description && <p>{brand.description}</p>}
+        </Link>
+      ))}
+    </div>
+  );
+}
+```
+
+**Brand detail page — products filtered by brand:**
+
+```tsx
+// components/pages/BrandProductsPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+
+interface Props {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ page?: string; search?: string }>;
+}
+
+export default async function BrandProductsPage({ params, searchParams }: Props) {
+  const { slug } = await params;
+  const { page = "1", search } = await searchParams;
+
+  const brands = await cms.fetchProductBrands(SITE_ID);
+  const brand = brands.find((b) => b.slug === slug);
+  if (!brand) notFound();
+
+  const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
+    brand_id: brand.id,
+    page: Number(page),
+    limit: 12,
+    search,
+  });
+
+  return (
+    <div>
+      {brand.logo_url && <img src={brand.logo_url} alt={brand.name} />}
+      <h1>{brand.name}</h1>
+
+      <div className="grid">
+        {products.map((product) => (
+          <Link key={product.id} href={`/products/${product.slug}`}>
+            {product.thumbnail_url && (
+              <img src={product.thumbnail_url} alt={product.name} />
+            )}
+            <h2>{product.name}</h2>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+### Collections Page
+
+```tsx
+// components/pages/CollectionsPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import Link from "next/link";
+
+export default async function CollectionsPage() {
+  const collections = await cms.fetchCollections(SITE_ID);
+
+  return (
+    <div className="grid">
+      {collections.map((col) => (
+        <Link key={col.id} href={`/collections/${col.slug}`}>
+          <h2>{col.name}</h2>
+          {col.description && <p>{col.description}</p>}
+          {col._count && <span>{col._count.items} products</span>}
+        </Link>
+      ))}
+    </div>
+  );
+}
+```
+
+**Collection detail — renders the collection's products in order:**
+
+```tsx
+// components/pages/CollectionDetailPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+
+export default async function CollectionDetailPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const collection = await cms.fetchCollectionDetail(SITE_ID, slug);
+
+  if (!collection) notFound();
+
+  // items are sorted by item.order from the API
+  const items = collection.items ?? [];
+
+  return (
+    <div>
+      <h1>{collection.name}</h1>
+      {collection.description && <p>{collection.description}</p>}
+
+      <div className="grid">
+        {items.map((item) => (
+          <Link key={item.id} href={`/products/${item.product.slug}`}>
+            {item.product.thumbnail_url && (
+              <img src={item.product.thumbnail_url} alt={item.product.name} />
+            )}
+            <h2>{item.product.name}</h2>
+            {/* Show lowest variant price */}
+            {item.product.variants.length > 0 && (
+              <p>
+                From ${Math.min(...item.product.variants.map((v) => v.sale_price ?? v.price))}
+              </p>
+            )}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+> `collection.items` includes the full `product` object with `variants` — no extra fetch needed on the detail page.
+
+---
+
+### Cart State (CartContext)
+
+The cart is managed client-side using React Context with `localStorage` persistence. Wrap the root layout with the provider.
+
+```tsx
+// context/CartContext.tsx
+"use client";
+
+import { createContext, useContext, useState, useEffect } from "react";
+import type { CartItem, Product, ProductVariant } from "@crayons/cms-sdk";
+
+interface CartContextValue {
+  items: CartItem[];
+  totalItems: number;
+  subtotal: number;
+  isOpen: boolean;
+  addItem: (product: Product, variant: ProductVariant, quantity: number) => void;
+  removeItem: (variantId: string) => void;
+  updateQuantity: (variantId: string, quantity: number) => void;
+  clearCart: () => void;
+  openCart: () => void;
+  closeCart: () => void;
+}
+
+const CartContext = createContext<CartContextValue | null>(null);
+
+export function CartProvider({ children }: { children: React.ReactNode }) {
+  const [items, setItems] = useState<CartItem[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+
+  // Hydrate from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("cart");
+    if (stored) setItems(JSON.parse(stored));
+  }, []);
+
+  // Persist to localStorage on change
+  useEffect(() => {
+    localStorage.setItem("cart", JSON.stringify(items));
+  }, [items]);
+
+  function addItem(product: Product, variant: ProductVariant, quantity: number) {
+    setItems((prev) => {
+      const existing = prev.find((i) => i.variant.id === variant.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.variant.id === variant.id
+            ? { ...i, quantity: i.quantity + quantity }
+            : i
+        );
+      }
+      return [...prev, { product, variant, quantity }];
+    });
+  }
+
+  function removeItem(variantId: string) {
+    setItems((prev) => prev.filter((i) => i.variant.id !== variantId));
+  }
+
+  function updateQuantity(variantId: string, quantity: number) {
+    setItems((prev) =>
+      prev.map((i) => (i.variant.id === variantId ? { ...i, quantity } : i))
+    );
+  }
+
+  function clearCart() {
+    setItems([]);
+  }
+
+  const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
+  const subtotal = items.reduce(
+    (sum, i) => sum + (i.variant.sale_price ?? i.variant.price) * i.quantity,
+    0
+  );
+
+  return (
+    <CartContext.Provider
+      value={{
+        items,
+        totalItems,
+        subtotal,
+        isOpen,
+        addItem,
+        removeItem,
+        updateQuantity,
+        clearCart,
+        openCart: () => setIsOpen(true),
+        closeCart: () => setIsOpen(false),
+      }}
+    >
+      {children}
+    </CartContext.Provider>
+  );
+}
+
+export function useCart() {
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error("useCart must be used inside CartProvider");
+  return ctx;
+}
+```
+
+```tsx
+// app/layout.tsx — wrap children with CartProvider
+import { CartProvider } from "@/context/CartContext";
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <CartProvider>
+          <SiteHeader ... />
+          {children}
+          <SiteFooter ... />
+          <CartDrawer />   {/* slides in when isOpen = true */}
+        </CartProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+> `CartProvider` and `useCart` are client-only. Never call `useCart` inside a server component.
+
+---
+
+### Order Placement
+
+`placeOrder` must be called server-side (keep `SITE_ID` out of the client bundle). Use an API route.
+
+```ts
+// app/api/store/orders/route.ts
+import { cms, SITE_ID } from "@/lib/cms";
+import type { PlaceOrderPayload } from "@crayons/cms-sdk";
+
+export async function POST(req: Request) {
+  const payload: PlaceOrderPayload = await req.json();
+  const order = await cms.placeOrder(SITE_ID, payload);
+  if (!order) return Response.json({ error: "Order failed" }, { status: 500 });
+  return Response.json(order);
+}
+```
+
+```tsx
+// components/store/CheckoutForm.tsx  (client component)
+"use client";
+
+import { useState } from "react";
+import type { PlaceOrderPayload } from "@crayons/cms-sdk";
+import { useCart } from "@/context/CartContext";
+
+export function CheckoutForm() {
+  const { items, subtotal, clearCart } = useCart();
+  const [status, setStatus] = useState<"idle" | "placing" | "success" | "error">("idle");
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setStatus("placing");
+
+    const form = e.currentTarget;
+    const payload: PlaceOrderPayload = {
+      customer_name: (form.elements.namedItem("name") as HTMLInputElement).value,
+      customer_email: (form.elements.namedItem("email") as HTMLInputElement).value,
+      customer_phone: (form.elements.namedItem("phone") as HTMLInputElement).value || null,
+      shipping_address: {
+        line1: (form.elements.namedItem("line1") as HTMLInputElement).value,
+        city: (form.elements.namedItem("city") as HTMLInputElement).value,
+        zip: (form.elements.namedItem("zip") as HTMLInputElement).value,
+        country: (form.elements.namedItem("country") as HTMLInputElement).value,
+      },
+      items: items.map((i) => ({
+        product_variant_id: i.variant.id,
+        quantity: i.quantity,
+      })),
+      notes: (form.elements.namedItem("notes") as HTMLTextAreaElement).value || null,
+    };
+
+    const res = await fetch("/api/store/orders", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (res.ok) {
+      clearCart();
+      setStatus("success");
+    } else {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input name="name" placeholder="Full name" required />
+      <input name="email" type="email" placeholder="Email" required />
+      <input name="phone" placeholder="Phone (optional)" />
+      <input name="line1" placeholder="Street address" required />
+      <input name="city" placeholder="City" required />
+      <input name="zip" placeholder="ZIP / Postcode" required />
+      <input name="country" placeholder="Country" required />
+      <textarea name="notes" placeholder="Order notes (optional)" />
+
+      <p>Subtotal: ${subtotal.toFixed(2)}</p>
+
+      <button type="submit" disabled={status === "placing" || items.length === 0}>
+        {status === "placing" ? "Placing order…" : "Place Order"}
+      </button>
+      {status === "success" && <p>Order placed successfully!</p>}
+      {status === "error" && <p>Something went wrong. Please try again.</p>}
+    </form>
+  );
+}
+```
+
+---
+
 ## SEO & Metadata
 
 Every `Page` returned by `fetchPageByUrl` or `fetchPages` includes an `seo` field (`SEO | null`) with `title`, `description`, `tags`, and `image`. Use Next.js `generateMetadata` to apply this per page, falling back to the site-wide defaults from `SiteConfig`.
@@ -1363,13 +2077,16 @@ Align your project structure to handle CMS data efficiently using Server Compone
 ```
 app/
 ├── [[...slug]]/
-│   └── page.tsx                # Catch-all handles EVERYTHING
+│   └── page.tsx                # Catch-all — handles CMS pages + store routes
 ├── layout.tsx                  # Root layout — fetches header, footer, siteConfig
 ├── api/
-│   └── contact/
-│       └── route.ts            # Server route for form submission
+│   ├── contact/
+│   │   └── route.ts            # CMS contact form submission
+│   └── store/
+│       └── orders/
+│           └── route.ts        # Store order placement (placeOrder)
 components/
-├── pages/                      # Registry-mapped page layouts
+├── pages/                      # CMS page layouts (registry-mapped)
 │   ├── HomePage.tsx
 │   ├── AboutPage.tsx
 │   ├── BlogPage.tsx
@@ -1383,36 +2100,53 @@ components/
 │   ├── TeamPage.tsx
 │   ├── TeamCategoryPage.tsx
 │   ├── TeamMemberDetailPage.tsx
-│   ├── ProductsPage.tsx
-│   ├── ProductDetailPage.tsx
 │   ├── ContactPage.tsx
-│   └── CustomPage.tsx
-├── sections/                   # Individual Section components
+│   ├── CustomPage.tsx
+│   │
+│   │   # Store pages (hardcoded routes, not CMS-driven)
+│   ├── ProductsPage.tsx            # /products
+│   ├── ProductDetailPage.tsx       # /products/[slug]
+│   ├── ProductCategoriesPage.tsx   # /categories
+│   ├── CategoryProductsPage.tsx    # /categories/[slug]
+│   ├── BrandsPage.tsx              # /brands
+│   ├── BrandProductsPage.tsx       # /brands/[slug]
+│   ├── CollectionsPage.tsx         # /collections
+│   └── CollectionDetailPage.tsx    # /collections/[slug]
+├── store/                      # Store UI components (client-side interactivity)
+│   ├── ProductDetailClient.tsx # Client component — variant selection + cart
+│   ├── CartDrawer.tsx          # Slide-in cart panel
+│   └── CheckoutForm.tsx        # Client component — order form
+├── sections/                   # CMS section components
 │   ├── hero.tsx
 │   ├── custom.tsx
 │   ├── cta.tsx
-│   ├── service.tsx             # Fetches fetchServices internally
-│   ├── testimonial.tsx         # Fetches fetchTestimonials internally
-│   ├── team.tsx                # Fetches fetchTeamMembers internally
-│   ├── faq.tsx                 # Fetches fetchFaqGroups internally
-│   ├── clients.tsx             # Fetches brands internally
-│   ├── gallery.tsx             # Fetches fetchAlbums internally
-│   ├── event.tsx               # Fetches fetchEvents internally
-│   ├── blog.tsx                # Fetches fetchBlogs internally
+│   ├── service.tsx
+│   ├── testimonial.tsx
+│   ├── team.tsx
+│   ├── faq.tsx
+│   ├── clients.tsx
+│   ├── gallery.tsx
+│   ├── event.tsx
+│   ├── blog.tsx
 │   ├── rich-content.tsx
-│   ├── about.tsx               # Fetches fetchAboutUs internally
-│   ├── multi-value.tsx
-│   └── contact-form.tsx        # Client component (form only)
+│   ├── about.tsx
+│   └── multi-value.tsx
 └── render-sections.tsx         # The section dispatcher
+context/
+└── CartContext.tsx             # localStorage cart state + useCart hook
+config/
+└── store.ts                    # STORE_ENABLED feature flag
 lib/
-├── cms.ts                      # Client initialization (singleton)
-├── cms-registry.ts             # Component mapping (PAGE_COMPONENT_MAP)
-└── cms-router.ts               # Route resolution logic (resolveCmsRoute)
+├── cms.ts                      # SDK client singleton (CMS + Store)
+├── cms-registry.ts             # CMS page component map
+└── cms-router.ts               # CMS route resolution
 ```
 
 > **Note**: This structure eliminates the need for hardcoded folders for `/blog`, `/services`, etc.
 
 > All `sections/` components that need live data are **async server components**. The `contact-form.tsx` is the only client component (`"use client"`).
+
+> Store pages are resolved first in `[[...slug]]/page.tsx` before CMS page lookup. `ProductDetailClient.tsx`, `CartDrawer.tsx`, `CheckoutForm.tsx`, and `CartContext.tsx` are the only store-side client components (`"use client"`).
 
 ## Core Concepts
 
@@ -1492,6 +2226,18 @@ export interface FetchOptions extends RequestInit {
       type?: string;     // Default: "contact"
     }
     ```
+
+### Store
+
+> All store methods use the `/api/public/store/` API prefix, not `/api/public/cms/`.
+
+- `fetchProductCategories(siteId, options?)`: Returns all product categories.
+- `fetchProductBrands(siteId, options?)`: Returns all product brands.
+- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, brand_id, is_featured }`.
+- `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**.
+- `fetchCollections(siteId, options?)`: Returns all collections (with `_count.items`, no products).
+- `fetchCollectionDetail(siteId, slug, options?)`: Returns a single collection **with full `items` array** (products + variants included).
+- `placeOrder(siteId, payload, options?)`: Places an order. Call from a server API route — never client-side.
 
 ## Type System
 
