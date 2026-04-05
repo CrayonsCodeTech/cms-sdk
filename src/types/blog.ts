@@ -1,3 +1,5 @@
+import type { Section } from "./page";
+
 export interface Blog {
   id: number;
   site_id: number;
@@ -17,4 +19,7 @@ export interface Blog {
   seo_description?: string | null;
   seo_keywords?: any | null;
   seo_image?: string | null;
+  extra?: {
+    sections: Section[];
+  } | null;
 }

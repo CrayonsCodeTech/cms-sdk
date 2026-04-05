@@ -862,6 +862,7 @@ export default async function ServicesPage({ page }: { page: Page }) {
 // components/pages/ServiceDetailPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { RenderSections } from "@/components/render-sections";
 
 export default async function ServiceDetailPage({
   params,
@@ -891,10 +892,17 @@ export default async function ServiceDetailPage({
           ))}
         </ul>
       )}
+
+      {/* Render sections from extra.sections if present */}
+      {service.extra?.sections && service.extra.sections.length > 0 && (
+        <RenderSections sections={service.extra.sections} />
+      )}
     </article>
   );
 }
 ```
+
+> **Note**: Services can have custom sections stored in `extra.sections`. Use `<RenderSections />` to render them on the detail page. This is optional — if no sections are defined, the service renders normally as shown above.
 
 ---
 
@@ -957,6 +965,7 @@ const categories = await cms.fetchCategories(SITE_ID);
 // components/pages/BlogDetailPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { RenderSections } from "@/components/render-sections";
 
 export default async function BlogDetailPage({
   params,
@@ -983,10 +992,17 @@ export default async function BlogDetailPage({
       {full.description && (
         <div dangerouslySetInnerHTML={{ __html: full.description }} />
       )}
+
+      {/* Render sections from extra.sections if present */}
+      {full.extra?.sections && full.extra.sections.length > 0 && (
+        <RenderSections sections={full.extra.sections} />
+      )}
     </article>
   );
 }
 ```
+
+> **Note**: Blogs can have custom sections stored in `extra.sections`. Use `<RenderSections />` to render them on the detail page. This is optional — if no sections are defined, the blog renders normally as shown above.
 
 ---
 
@@ -1039,6 +1055,7 @@ export default async function EventsPage({
 // components/pages/EventDetailPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { RenderSections } from "@/components/render-sections";
 
 export default async function EventDetailPage({
   params,
@@ -1064,10 +1081,17 @@ export default async function EventDetailPage({
       {event.description && (
         <div dangerouslySetInnerHTML={{ __html: event.description }} />
       )}
+
+      {/* Render sections from extra.sections if present */}
+      {event.extra?.sections && event.extra.sections.length > 0 && (
+        <RenderSections sections={event.extra.sections} />
+      )}
     </article>
   );
 }
 ```
+
+> **Note**: Events can have custom sections stored in `extra.sections`. Use `<RenderSections />` to render them on the detail page. This is optional — if no sections are defined, the event renders normally as shown above.
 
 ---
 

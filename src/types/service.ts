@@ -1,3 +1,5 @@
+import type { Section } from "./page";
+
 export interface Service {
   id: number;
   site_id: number;
@@ -15,4 +17,7 @@ export interface Service {
   order: number;
   created_at: string;
   updated_at: string;
+  extra?: {
+    sections: Section[];
+  } | null;
 }

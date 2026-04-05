@@ -1,3 +1,5 @@
+import type { Section } from "./page";
+
 export interface Event {
   id: string;
   site_id: string;
@@ -25,5 +27,7 @@ export interface Event {
   seo_description?: string | null;
   seo_keywords?: any | null;
   seo_image?: string | null;
-  extra?: any | null;
+  extra?: {
+    sections: Section[];
+  } | null;
 }
