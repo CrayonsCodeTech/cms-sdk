@@ -34,6 +34,20 @@ pnpm add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git --allow-build=@cra
 bun add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git && bun pm trust @crayons/cms-sdk
 ```
 
+## Quick Start: Creating a New Next.js App (Cloudflare)
+
+If you are starting a new project, we recommend using the Cloudflare Next.js starter which comes with **OpenNext** support out of the box.
+
+Run the following command to initialize your app:
+
+```bash
+npm create cloudflare@latest -- my-next-app --framework=next
+```
+
+For detailed instructions on deploying Next.js to Cloudflare Workers, refer to the [official Cloudflare documentation](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/).
+
+---
+
 ## Getting Started
 
 ### 1. Environment Variables
@@ -2000,7 +2014,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   ]);
 
   const siteName = siteConfig?.site_name ?? "";
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const baseUrl = process.env.NEXT_PUBLIC_CMS_BASE_URL ?? "";
 
   if (!page?.seo) {
     return { title: siteName };
