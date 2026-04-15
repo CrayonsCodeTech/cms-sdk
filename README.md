@@ -476,6 +476,8 @@ import { BlogSection } from "@/components/sections/blog";
 import { RichContentSection } from "@/components/sections/rich-content";
 import { AboutSection } from "@/components/sections/about";
 import { FaqSection } from "@/components/sections/faq";
+import { MarqueeSection } from "@/components/sections/marquee";
+import { HistorySection } from "@/components/sections/history";
 
 export function RenderSections({ sections }: { sections: Section[] }) {
   return (
@@ -522,6 +524,10 @@ export function RenderSections({ sections }: { sections: Section[] }) {
             return <AboutSection key={section.id} content={section.content} />;
           case "faq":
             return <FaqSection key={section.id} content={section.content} />;
+          case "marquee":
+            return <MarqueeSection key={section.id} content={section.content} />;
+          case "history":
+            return <HistorySection key={section.id} content={section.content} />;
           default:
             console.warn(`Unknown section type: ${(section as any).type}`);
             return null;
@@ -552,6 +558,8 @@ Several section types only carry **display text** (headings, subtitles) in `sect
 | Gallery          | `"gallery"`         | `GallerySection`      | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
 | Events           | `"event"`           | `GenericSection`      | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
 | Blog             | `"blog"`            | `GenericSection`      | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
+| Marquee          | `"marquee"`         | `MarqueeSection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
+| History          | `"history"`          | `HistorySection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
 
 **How to handle this in section components:**
 

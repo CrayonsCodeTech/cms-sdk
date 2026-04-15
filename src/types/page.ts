@@ -31,12 +31,20 @@ export interface CustomContent {
   card_content_bol?: boolean | null;
   cta?: CTA;
   image_src: string;
+  image_src_two?: string | null;
   signature: string | null;
   reverse: boolean | null;
   image_style: string | null;
   small_image: boolean | null;
   subtitle?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   external_link: boolean;
+  stats?: Array<{
+    value: string;
+    label: string;
+    prefix?: string | null;
+    suffix?: string | null;
+    icon?: string | null;
+  }>;
 }
 
 export interface CTAContent {
@@ -102,6 +110,8 @@ export interface MultiValueItem {
   description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   image: Image;
   cta?: Partial<CTA>;
+  badge?: string | null;
+  icon?: string | null;
 }
 
 export interface MultiValueSection {
@@ -112,21 +122,53 @@ export interface MultiValueSection {
   values: MultiValueItem[];
 }
 
+export interface MarqueeItem {
+  text?: string | null;
+  image?: string | null;
+  link?: string | null;
+  is_external?: boolean | null;
+}
+
+export interface MarqueeSection {
+  section_heading: string;
+  title: string;
+  subtitle?: string;
+  items: MarqueeItem[];
+}
+
+export interface HistoryItem {
+  year: string;
+  title: string;
+  description?: string | null;
+  image?: string | null;
+  link?: string | null;
+  is_external?: boolean | null;
+}
+
+export interface HistorySection {
+  section_heading: string;
+  title: string;
+  subtitle?: string;
+  items: HistoryItem[];
+}
+
 export type Section =
-  | { id: string; type: "hero"; content: HeroContent[] }
-  | { id: string; type: "custom"; content: CustomContent }
-  | { id: string; type: "cta"; content: CTAContent }
-  | { id: string; type: "testimonial"; content: TestimonialsSection }
-  | { id: string; type: "service"; content: ServicesSection }
-  | { id: string; type: "multi-value"; content: MultiValueSection }
-  | { id: string; type: "team"; content: TeamSection }
-  | { id: string; type: "clients"; content: ClientsSection }
-  | { id: string; type: "gallery"; content: GallerySection }
-  | { id: string; type: "event"; content: GenericSection }
-  | { id: string; type: "blog"; content: GenericSection }
-  | { id: string; type: "rich-content"; content: RichContentSection }
-  | { id: string; type: "about"; content: AboutSection }
-  | { id: string; type: "faq"; content: FaqSection };
+  | { id: string; variant?: string | null; type: "hero"; content: HeroContent[] }
+  | { id: string; variant?: string | null; type: "custom"; content: CustomContent }
+  | { id: string; variant?: string | null; type: "cta"; content: CTAContent }
+  | { id: string; variant?: string | null; type: "testimonial"; content: TestimonialsSection }
+  | { id: string; variant?: string | null; type: "service"; content: ServicesSection }
+  | { id: string; variant?: string | null; type: "multi-value"; content: MultiValueSection }
+  | { id: string; variant?: string | null; type: "team"; content: TeamSection }
+  | { id: string; variant?: string | null; type: "clients"; content: ClientsSection }
+  | { id: string; variant?: string | null; type: "gallery"; content: GallerySection }
+  | { id: string; variant?: string | null; type: "event"; content: GenericSection }
+  | { id: string; variant?: string | null; type: "blog"; content: GenericSection }
+  | { id: string; variant?: string | null; type: "rich-content"; content: RichContentSection }
+  | { id: string; variant?: string | null; type: "about"; content: AboutSection }
+  | { id: string; variant?: string | null; type: "faq"; content: FaqSection }
+  | { id: string; variant?: string | null; type: "marquee"; content: MarqueeSection }
+  | { id: string; variant?: string | null; type: "history"; content: HistorySection };
 
 export interface SEO {
   title: string;

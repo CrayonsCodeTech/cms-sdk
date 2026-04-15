@@ -13,7 +13,7 @@ export interface ProductVariant {
   id: string;
   product_id: string;
   site_id: string;
-  sku: string;
+  sku?: string | null;
   name: string | null;
   model_number: string | null;
   order: number;
