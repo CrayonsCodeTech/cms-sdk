@@ -1,4 +1,5 @@
 import React from "react";
+import type { LucideProps } from "lucide-react";
 import {
   Home,
   User,
@@ -96,7 +97,16 @@ import {
   Gift,
   Truck,
   Clock,
-  LucideProps,
+  Handshake,
+  Stethoscope,
+  Microscope,
+  GraduationCap,
+  BookOpen,
+  Building2,
+  Trees,
+  HeartHandshake,
+  Brain,
+  Lightbulb,
 } from "lucide-react";
 
 /**
@@ -199,6 +209,16 @@ export const ICON_MAP: Record<string, React.ComponentType<LucideProps>> = {
   Gift,
   Truck,
   Clock,
+  Handshake,
+  Stethoscope,
+  Microscope,
+  GraduationCap,
+  BookOpen,
+  Building2,
+  Trees,
+  HeartHandshake,
+  Brain,
+  Lightbulb,
 };
 
 export interface IconProps extends LucideProps {
