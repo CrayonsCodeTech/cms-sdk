@@ -21,5 +21,10 @@ export interface Blog {
   seo_image?: string | null;
   extra?: {
     sections: Section[];
+    cta?: {
+      text: string | null;
+      url: string | null;
+      is_external: boolean | null;
+    } | null;
   } | null;
 }

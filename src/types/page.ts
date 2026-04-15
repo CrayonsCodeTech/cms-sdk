@@ -139,7 +139,7 @@ export interface MarqueeSection {
 export interface HistoryItem {
   year: string;
   title: string;
-  description?: string | null;
+  description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   image?: string | null;
   link?: string | null;
   is_external?: boolean | null;

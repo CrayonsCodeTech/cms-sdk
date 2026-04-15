@@ -16,7 +16,7 @@ export interface Brand {
   id: string;
   brand_group_id: string;
   name: string;
-  description: string | null;
+  description: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   website_url: string | null;
   logo_url: string;
   logo_alt: string | null;
