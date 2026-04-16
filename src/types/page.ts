@@ -119,6 +119,7 @@ export interface MultiValueSection {
   title: string;
   subtitle?: string;
   description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  image?: Image | null;
   values: MultiValueItem[];
 }
 
