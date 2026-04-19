@@ -257,7 +257,7 @@ export function createCmsClient(config: CmsClientConfig) {
           : urlPath.replace(/^\/|\/$/g, "");
 
       return await cmsFetch<Page>(
-        `/api/public/cms/${siteId}/page/by-url?url=${encodeURIComponent(targetUrl)}`,
+        `/api/public/cms/${siteId}/page/by-url?url=${encodeURIComponent(targetUrl)}/`,
         {
           revalidate: CACHE.SHORT,
           tags: ["pages", `page-${targetUrl || "root"}`],
@@ -651,14 +651,11 @@ export function createCmsClient(config: CmsClientConfig) {
     slug: string,
     options?: FetchOptions,
   ): Promise<Product | null> {
-    return cmsFetch<Product>(
-      `/api/public/store/${siteId}/products/${slug}/`,
-      {
-        revalidate: CACHE.SHORT,
-        tags: ["products", `product-${slug}`],
-        ...options,
-      },
-    );
+    return cmsFetch<Product>(`/api/public/store/${siteId}/products/${slug}/`, {
+      revalidate: CACHE.SHORT,
+      tags: ["products", `product-${slug}`],
+      ...options,
+    });
   }
 
   async function fetchCollections(
