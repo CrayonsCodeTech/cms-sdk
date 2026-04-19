@@ -362,21 +362,16 @@ import { cms, SITE_ID } from "./cms";
 
 export async function resolveCmsRoute(slug: string[]) {
   const urlPath = slug.length > 0 ? `/${slug.join("/")}` : "/";
-  const pages = await cms.fetchPages(SITE_ID);
-
-  // 1. Check for exact match
-  const exactPage = pages.find((p) => {
-    const norm = (u: string) => "/" + u.replace(/^\/|\/$/g, "");
-    return norm(p.url) === norm(urlPath);
-  });
+  const exactPage = await cms.fetchPageByUrl(SITE_ID, urlPath);
 
   if (exactPage) return { type: "page" as const, data: exactPage };
 
   // 2. Check for detail page (walking up the path)
+  // Example: /blog/my-post or /news/my-post
   if (slug.length > 0) {
     for (let i = slug.length - 1; i >= 0; i--) {
       const parentPath = "/" + slug.slice(0, i).join("/");
-      const parentPage = pages.find((p) => p.url === parentPath);
+      const parentPage = await cms.fetchPageByUrl(SITE_ID, parentPath || "/");
 
       if (parentPage) {
         return {
@@ -700,8 +695,8 @@ Different page types follow different rendering strategies. Understanding these 
 | `/about`                | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                    |
 | `/services`             | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                |
 | `/services/[slug]`      | `services`                        | `fetchServices(siteId)` (slug lookup) or `fetchServiceById(siteId, id)`        |
-| `/blog`                 | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` + `fetchBlogs(siteId, params)`               |
-| `/blog/[slug]`          | `blog`                            | `fetchBlogs(siteId, { limit })` (slug lookup) + `fetchBlogById(siteId, id)`    |
+| `/blog` or `/news`      | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` (or your CMS-defined base url) + `fetchBlogs(siteId, params)` |
+| `/blog/[slug]`          | `blog`                            | `fetchBlogBySlug(siteId, slug)`                                                 |
 | `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`            |
 | `/events/[slug]`        | `events`                          | `fetchEvents(siteId, { limit })` (slug lookup) or `fetchEventById(siteId, id)` |
 | `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`           |
@@ -995,13 +990,7 @@ export default async function BlogDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  // fetchBlogById accepts the numeric id — fetch the list to resolve the slug first
-  const { data: blogs } = await cms.fetchBlogs(SITE_ID, { limit: 1000 });
-  const blog = blogs.find((b) => b.slug === slug);
-
-  if (!blog) notFound();
-
-  const full = await cms.fetchBlogById(SITE_ID, blog.id);
+  const full = await cms.fetchBlogBySlug(SITE_ID, slug);
   if (!full) notFound();
 
   return (
@@ -2060,8 +2049,7 @@ For dedicated pages (blog detail, service detail, etc.) the pattern is the same 
 // app/blog/[slug]/page.tsx
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const { data: blogs } = await cms.fetchBlogs(SITE_ID, { limit: 1000 });
-  const blog = blogs.find((b) => b.slug === slug);
+  const blog = await cms.fetchBlogBySlug(SITE_ID, slug);
   const siteConfig = await cms.fetchSiteConfig(SITE_ID);
   const siteName = siteConfig?.site_name ?? "";
 
@@ -2233,13 +2221,14 @@ export interface FetchOptions extends RequestInit {
 
 ### Pages
 
-- `fetchPages(siteId, options?)`: Returns all pages for a site.
-- `fetchPageByUrl(siteId, urlPath, options?)`: Finds a specific page by its URL path.
+- `fetchPages(siteId, params?, options?)`: Returns paginated page summaries (`10` items per backend page, no `sections`). Params: `{ page }`.
+- `fetchPageByUrl(siteId, urlPath, options?)`: Fetches a specific page directly by URL path.
 
 ### Blogs & Categories
 
 - `fetchBlogs(siteId, params?, options?)`: Returns paginated blogs. Params: `{ page, limit, search }`.
-- `fetchBlogById(siteId, id, options?)`: Returns a single blog post.
+- `fetchBlogBySlug(siteId, slug, options?)`: Returns a single blog post by slug.
+- `fetchBlogById(siteId, idOrSlug, options?)`: Backwards-compatible alias (internally resolves via slug route).
 - `fetchCategories(siteId, options?)`: Returns all blog categories.
 
 ### Other Entities
@@ -2536,19 +2525,17 @@ A user visits any URL, e.g. `/services` or `/blog/my-post`. Next.js routes every
 
 ### Step 2 — Catch-all fetches the pages list
 
-The first thing the catch-all does is call `fetchPages(siteId)`. This returns every page that exists in the CMS — each page has a `url` (e.g. `/services`) and a `page_type` (e.g. `"services"`). The catch-all uses this list to figure out what to render.
+The catch-all should call `fetchPageByUrl(siteId, urlPath)` for the current request path first. This means pages are fetched on-demand only when users navigate to them (SSR-friendly dynamic routing).
 
 ### Step 3 — URL is matched to a page
 
-The catch-all compares the incoming URL against the pages list:
-
-- **Exact match** (`/services` → finds the `services` page) → this is a listing page.
-- **Parent match** (`/services/web-design` → parent `/services` found) → this is a detail page.
-- **No match** → `notFound()`.
+- **Exact match**: `fetchPageByUrl(siteId, urlPath)` returns a page (`/services`, `/blog`, `/news`, etc.).
+- **Parent match**: if exact lookup fails, walk parent paths (`/blog/my-post` -> check `/blog`) and treat remaining segments as the entity slug.
+- **No match**: `notFound()`.
 
 ### Step 4 — Page data is passed to the right component
 
-Once a match is found, the catch-all looks up the correct page component from a registry (`PAGE_COMPONENT_MAP`) using `page_type`. It then renders that component, passing the matched `page` object along with `params`, `searchParams`, and `allPages` so the component has everything it might need.
+Once a match is found, the catch-all looks up the correct page component from a registry (`PAGE_COMPONENT_MAP`) using `page_type`. It then renders that component, passing the matched `page` object plus route params/search params.
 
 Detail pages (e.g. a single blog post) skip the `page` prop and receive `params` (containing the item slug) and `parentUrl` instead.
 
@@ -2561,9 +2548,9 @@ The page component receives the `page` object which contains the **section chrom
 - `EventsPage` calls `fetchEvents(siteId, { page, limit })`.
 - `GalleryPage` calls `fetchAlbums(siteId)`.
 - `AboutPage` calls `fetchAboutUs(siteId)` for mission, vision, values.
-- `HomePage` and `CustomPage` skip their own fetch — they already have `allPages` and just find their page from it.
+- `HomePage` and `CustomPage` can render directly from the fetched page object.
 
-Detail pages (e.g. `BlogDetailPage`) fetch the full list, find the matching item by slug, then call the single-item fetch (e.g. `fetchBlogById`) to get the complete data.
+Detail pages (e.g. `BlogDetailPage`) should call slug-based fetches directly (e.g. `fetchBlogBySlug(siteId, slug)`).
 
 ### Step 6 — Sections are rendered
 

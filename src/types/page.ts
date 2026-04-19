@@ -192,3 +192,6 @@ export interface Page {
   created_at: string;
   updated_at: string;
 }
+
+// Used by GET /page/ list endpoint (lightweight payload, no sections)
+export type PageListItem = Omit<Page, "sections">;
