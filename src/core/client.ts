@@ -254,7 +254,7 @@ export function createCmsClient(config: CmsClientConfig) {
       const targetUrl =
         urlPath === "/" || urlPath === ""
           ? "/"
-          : urlPath.replace(/^\/|\/$/g, "");
+          : `/${urlPath.replace(/^\/|\/$/g, "")}`;
 
       return await cmsFetch<Page>(
         `/api/public/cms/${siteId}/page/by-url/?url=${encodeURIComponent(targetUrl)}`,
