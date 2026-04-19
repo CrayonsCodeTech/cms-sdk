@@ -3,7 +3,7 @@ import type { PaginatedResponse } from "../types/pagination";
 import type { Header } from "../types/header";
 import type { Footer } from "../types/footer";
 import type { SiteConfig } from "../types/site-config";
-import type { Page } from "../types/page";
+import type { Page, PageListItem } from "../types/page";
 import type { AboutUsData } from "../types/about";
 import type { Service } from "../types/service";
 import type { Blog } from "../types/blog";
@@ -229,16 +229,20 @@ export function createCmsClient(config: CmsClientConfig) {
   // Pages
   // ============================================================================
 
-  async function fetchPages(
+  function fetchPages(
     siteId: string,
+    params: { page?: number } = {},
     options?: FetchOptions,
-  ): Promise<Page[]> {
-    const result = await cmsFetch<Page[]>(`/api/public/cms/${siteId}/page/`, {
-      revalidate: CACHE.SHORT,
-      tags: ["pages"],
-      ...options,
-    });
-    return result ?? [];
+  ): Promise<PaginatedResponse<PageListItem>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<PageListItem>(
+      `/api/public/cms/${siteId}/page/?${query}`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["pages"],
+        ...options,
+      },
+    );
   }
 
   async function fetchPageByUrl(
@@ -247,19 +251,18 @@ export function createCmsClient(config: CmsClientConfig) {
     options?: FetchOptions,
   ): Promise<Page | null> {
     try {
-      const pages = await fetchPages(siteId, options);
-      if (!pages || !Array.isArray(pages)) return null;
+      const targetUrl =
+        urlPath === "/" || urlPath === ""
+          ? "/"
+          : urlPath.replace(/^\/|\/$/g, "");
 
-      return (
-        pages.find((p) => {
-          const normalizedPageUrl =
-            p.url === "/" ? "/" : `/${p.url.replace(/^\/|\/$/g, "")}`;
-          const targetUrl =
-            urlPath === "/" || urlPath === ""
-              ? "/"
-              : `/${urlPath.replace(/^\/|\/$/g, "")}`;
-          return normalizedPageUrl === targetUrl;
-        }) ?? null
+      return await cmsFetch<Page>(
+        `/api/public/cms/${siteId}/page/by-url?url=${encodeURIComponent(targetUrl)}`,
+        {
+          revalidate: CACHE.SHORT,
+          tags: ["pages", `page-${targetUrl || "root"}`],
+          ...options,
+        },
       );
     } catch (error) {
       console.error(`Error in fetchPageByUrl for ${urlPath}:`, error);
@@ -330,16 +333,25 @@ export function createCmsClient(config: CmsClientConfig) {
     });
   }
 
-  function fetchBlogById(
+  function fetchBlogBySlug(
     siteId: string,
-    id: number,
+    slug: string,
     options?: FetchOptions,
   ): Promise<Blog | null> {
-    return cmsFetch<Blog>(`/api/public/cms/${siteId}/blog/${id}/`, {
+    return cmsFetch<Blog>(`/api/public/cms/${siteId}/blog/${slug}`, {
       revalidate: CACHE.SHORT,
-      tags: ["blogs", `blog-${id}`],
+      tags: ["blogs", `blog-${slug}`],
       ...options,
     });
+  }
+
+  // Backwards-compatible alias. Backend route resolves by slug.
+  function fetchBlogById(
+    siteId: string,
+    idOrSlug: number | string,
+    options?: FetchOptions,
+  ): Promise<Blog | null> {
+    return fetchBlogBySlug(siteId, String(idOrSlug), options);
   }
 
   // ============================================================================
@@ -708,6 +720,7 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchServiceById,
     // Blogs
     fetchBlogs,
+    fetchBlogBySlug,
     fetchBlogById,
     // Categories
     fetchCategories,
