@@ -17,9 +17,9 @@ export interface ProductVariant {
   name: string | null;
   model_number: string | null;
   order: number;
-  price: number;
-  sale_price: number | null;
-  cost_price: number | null;
+  price?: number;
+  sale_price?: number | null;
+  cost_price?: number | null;
   inventory: number;
   weight: number | null;
   attributes?: Record<string, string>;
@@ -28,10 +28,11 @@ export interface ProductVariant {
   included_items?: string[];
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
   images: ProductImage[];
 }
 
-export interface Product {
+export interface ProductListItem {
   id: string;
   site_id: string;
   category_id: string;
@@ -39,14 +40,17 @@ export interface Product {
   name: string;
   slug: string;
   subtitle: string | null;
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   status: ProductStatus;
   is_featured: boolean;
-  needs_shipping: boolean;
   thumbnail_url: string | null;
+  created_at: string;
+}
+
+export interface Product extends ProductListItem {
+  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  needs_shipping: boolean;
   metadata: unknown;
   deleted_at: string | null;
-  created_at: string;
   updated_at: string;
-  variants?: ProductVariant[]; // only present on fetchProductDetail, absent on list
+  variants?: ProductVariant[];
 }

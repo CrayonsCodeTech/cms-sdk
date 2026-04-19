@@ -1439,7 +1439,7 @@ export default async function ProductsPage({ searchParams }: Props) {
       </div>
 
       {/* Pagination */}
-      <p>Page {pagination.page} of {pagination.totalPages}</p>
+      <p>Page {pagination.page} • Total products: {pagination.total}</p>
     </div>
   );
 }
@@ -2195,7 +2195,6 @@ export interface PaginatedResponse<T> {
     page: number;
     limit: number;
     total: number;
-    totalPages: number;
   };
 }
 ```

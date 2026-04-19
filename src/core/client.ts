@@ -16,7 +16,7 @@ import type { Event } from "../types/event";
 import type { Faq } from "../types/faq";
 import type { FaqGroup } from "../types/faq-group";
 import type { ContactPayload, Contact } from "../types/contact";
-import type { Product, ProductVariant } from "../types/product";
+import type { Product, ProductListItem, ProductVariant } from "../types/product";
 import type { ProductCategory } from "../types/product-category";
 import type { ProductBrand } from "../types/product-brand";
 import type { Collection } from "../types/collection";
@@ -119,7 +119,6 @@ export function createCmsClient(config: CmsClientConfig) {
         page: 1,
         limit: PAGINATION.DEFAULT_LIMIT,
         total: 0,
-        totalPages: 0,
       },
     };
 
@@ -634,9 +633,9 @@ export function createCmsClient(config: CmsClientConfig) {
       is_featured?: "true" | "false";
     } = {},
     options?: FetchOptions,
-  ): Promise<PaginatedResponse<Product>> {
+  ): Promise<PaginatedResponse<ProductListItem>> {
     const query = buildQueryString(params);
-    return cmsFetchPaginated<Product>(
+    return cmsFetchPaginated<ProductListItem>(
       `/api/public/store/${siteId}/products/?${query}`,
       {
         revalidate: CACHE.SHORT,
