@@ -257,7 +257,7 @@ export function createCmsClient(config: CmsClientConfig) {
           : urlPath.replace(/^\/|\/$/g, "");
 
       return await cmsFetch<Page>(
-        `/api/public/cms/${siteId}/page/by-url?url=${encodeURIComponent(targetUrl)}/`,
+        `/api/public/cms/${siteId}/page/by-url/?url=${encodeURIComponent(targetUrl)}`,
         {
           revalidate: CACHE.SHORT,
           tags: ["pages", `page-${targetUrl || "root"}`],
