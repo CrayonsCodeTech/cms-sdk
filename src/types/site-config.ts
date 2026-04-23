@@ -15,11 +15,26 @@ export interface LocationConfig {
   embed_map_url?: string;
 }
 
+export interface WorkingHours {
+  start_time: string;
+  end_time: string;
+  active_days: (
+    | "monday"
+    | "tuesday"
+    | "wednesday"
+    | "thursday"
+    | "friday"
+    | "saturday"
+    | "sunday"
+  )[];
+}
+
 export interface ContactConfig {
   phone_number: string[];
   email: string[];
   socials: SocialLink[];
   location?: LocationConfig;
+  working_hours?: WorkingHours | null;
 }
 
 export interface SiteConfig {

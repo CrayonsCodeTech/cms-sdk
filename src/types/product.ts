@@ -32,6 +32,11 @@ export interface ProductVariant {
   images: ProductImage[];
 }
 
+export type ProductVariantListItem = Pick<
+  ProductVariant,
+  "id" | "sku" | "name" | "price" | "sale_price" | "inventory" | "order"
+>;
+
 export interface ProductListItem {
   id: string;
   site_id: string;
@@ -44,6 +49,7 @@ export interface ProductListItem {
   is_featured: boolean;
   thumbnail_url: string | null;
   created_at: string;
+  variants?: ProductVariantListItem[];
 }
 
 export interface Product extends ProductListItem {
