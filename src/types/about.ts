@@ -11,16 +11,17 @@ export interface AboutStat {
 }
 
 export interface AboutUsData {
-  id: number;
-  site_id: number;
-  company_profile_summary: string;
+  id: string;
+  site_id: string;
+  company_profile_summary?: string | null;
   company_profile: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
-  vision: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
-  mission: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  vision?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  mission?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   image_url: string;
   image_alt: string;
-  video_url: string;
-  founding_year: string;
+  video_url?: string | null;
+  founding_year?: string | null;
   values: AboutValue[];
-  stats: AboutStat[];
+  stats?: AboutStat[] | null;
+  extra?: Record<string, unknown> | null;
 }

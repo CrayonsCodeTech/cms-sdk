@@ -1,8 +1,8 @@
 import type { Section } from "./page";
 
 export interface Blog {
-  id: number;
-  site_id: number;
+  id: string;
+  site_id: string;
   slug: string;
   title: string;
   image_url?: string | null;

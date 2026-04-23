@@ -7,17 +7,18 @@ export interface ProductImage {
   alt_text: string | null;
   order: number;
   created_at: string;
+  updated_at: string;
 }
 
 export interface ProductVariant {
   id: string;
   product_id: string;
   site_id: string;
-  sku?: string | null;
+  sku: string;
   name: string | null;
   model_number: string | null;
   order: number;
-  price?: number;
+  price: number;
   sale_price?: number | null;
   cost_price?: number | null;
   inventory: number;
@@ -32,9 +33,16 @@ export interface ProductVariant {
   images: ProductImage[];
 }
 
+// Public endpoints mask raw inventory count: boolean (in stock?) + low_stock signal
+export type PublicProductVariant = Omit<ProductVariant, "inventory"> & {
+  inventory: boolean;
+  low_stock: boolean;
+};
+
+// Subset returned on product list responses (public)
 export type ProductVariantListItem = Pick<
-  ProductVariant,
-  "id" | "sku" | "name" | "price" | "sale_price" | "inventory" | "order"
+  PublicProductVariant,
+  "id" | "sku" | "name" | "price" | "sale_price" | "inventory" | "low_stock" | "order"
 >;
 
 export interface ProductListItem {
@@ -52,11 +60,11 @@ export interface ProductListItem {
   variants?: ProductVariantListItem[];
 }
 
-export interface Product extends ProductListItem {
+export interface Product extends Omit<ProductListItem, "variants"> {
   description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   needs_shipping: boolean;
   metadata: unknown;
   deleted_at: string | null;
   updated_at: string;
-  variants?: ProductVariant[];
+  variants?: PublicProductVariant[];
 }

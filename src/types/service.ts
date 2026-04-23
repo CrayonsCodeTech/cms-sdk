@@ -1,19 +1,18 @@
 import type { Section } from "./page";
 
 export interface Service {
-  id: number;
-  site_id: number;
+  id: string;
+  site_id: string;
   title: string;
   slug: string;
-  short_description: string;
-  excerpt: string;
+  excerpt?: string | null;
   description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
-  image_url: string;
-  image_alt: string;
-  icon: string;
+  image_url?: string | null;
+  image_alt?: string | null;
+  icon?: string | null;
   features: string[];
-  link_text: string;
-  link_url: string;
+  link_text?: string | null;
+  link_url?: string | null;
   order: number;
   created_at: string;
   updated_at: string;
