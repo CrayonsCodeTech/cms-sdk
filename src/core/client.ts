@@ -21,6 +21,7 @@ import type { ProductCategory } from "../types/product-category";
 import type { ProductBrand } from "../types/product-brand";
 import type { Collection } from "../types/collection";
 import type { Order, PlaceOrderPayload } from "../types/order";
+import type { StoreSettings } from "../types/store-setting";
 
 export interface FetchOptions extends RequestInit {
   revalidate?: number;
@@ -592,6 +593,17 @@ export function createCmsClient(config: CmsClientConfig) {
   // Note: Uses /api/public/store/ prefix (NOT /api/public/cms/)
   // ============================================================================
 
+  function fetchStoreSettings(
+    siteId: string,
+    options?: FetchOptions,
+  ): Promise<StoreSettings | null> {
+    return cmsFetch<StoreSettings>(`/api/public/store/${siteId}/settings/`, {
+      revalidate: CACHE.MEDIUM,
+      tags: ["store-settings"],
+      ...options,
+    });
+  }
+
   async function fetchProductCategories(
     siteId: string,
     options?: FetchOptions,
@@ -740,6 +752,7 @@ export function createCmsClient(config: CmsClientConfig) {
     // Contact
     submitContactForm,
     // Store
+    fetchStoreSettings,
     fetchProductCategories,
     fetchProductBrands,
     fetchProducts,
