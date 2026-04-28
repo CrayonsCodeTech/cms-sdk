@@ -15,6 +15,7 @@ import type { Testimonial } from "../types/testimonials";
 import type { Event } from "../types/event";
 import type { Faq } from "../types/faq";
 import type { FaqGroup } from "../types/faq-group";
+import type { Redirect, ResolvedRedirect } from "../types/redirect";
 import type { ContactPayload, Contact } from "../types/contact";
 import type { Product, ProductListItem, ProductVariant } from "../types/product";
 import type { ProductCategory } from "../types/product-category";
@@ -589,6 +590,40 @@ export function createCmsClient(config: CmsClientConfig) {
   }
 
   // ============================================================================
+  // Redirects
+  // ============================================================================
+
+  async function fetchRedirects(
+    siteId: string,
+    options?: FetchOptions,
+  ): Promise<Redirect[]> {
+    const result = await cmsFetch<Redirect[]>(
+      `/api/public/cms/${siteId}/redirects/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["redirects"],
+        ...options,
+      },
+    );
+    return result ?? [];
+  }
+
+  function resolveRedirect(
+    siteId: string,
+    sourcePath: string,
+    options?: FetchOptions,
+  ): Promise<ResolvedRedirect | null> {
+    return cmsFetch<ResolvedRedirect>(
+      `/api/public/cms/${siteId}/redirects/resolve/?sourcePath=${encodeURIComponent(sourcePath)}`,
+      {
+        revalidate: CACHE.NO_CACHE,
+        tags: ["redirects", `redirect-${sourcePath}`],
+        ...options,
+      },
+    );
+  }
+
+  // ============================================================================
   // Store — Products, Categories, Brands, Collections, Orders
   // Note: Uses /api/public/store/ prefix (NOT /api/public/cms/)
   // ============================================================================
@@ -749,6 +784,9 @@ export function createCmsClient(config: CmsClientConfig) {
     // FAQ Groups
     fetchFaqGroups,
     fetchFaqs,
+    // Redirects
+    fetchRedirects,
+    resolveRedirect,
     // Contact
     submitContactForm,
     // Store

@@ -24,6 +24,7 @@ export * from "./types/testimonials";
 export * from "./types/event";
 export * from "./types/faq";
 export * from "./types/faq-group";
+export * from "./types/redirect";
 export * from "./types/company-info";
 export * from "./types/site";
 export * from "./types/contact";
