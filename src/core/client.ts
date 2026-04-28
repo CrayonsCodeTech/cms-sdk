@@ -15,7 +15,7 @@ import type { Testimonial } from "../types/testimonials";
 import type { Event } from "../types/event";
 import type { Faq } from "../types/faq";
 import type { FaqGroup } from "../types/faq-group";
-import type { Redirect, ResolvedRedirect } from "../types/redirect";
+import type { Redirect, Redirect404Log, ResolvedRedirect } from "../types/redirect";
 import type { ContactPayload, Contact } from "../types/contact";
 import type { Product, ProductListItem, ProductVariant } from "../types/product";
 import type { ProductCategory } from "../types/product-category";
@@ -623,6 +623,34 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
+  function reportRedirect404(
+    siteId: string,
+    sourcePath: string,
+    referrer?: string,
+    options?: FetchOptions,
+  ): Promise<Redirect404Log | null> {
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options?.headers ?? {}),
+    };
+
+    return cmsFetch<Redirect404Log>(
+      `/api/public/cms/${siteId}/redirects/404-logs/`,
+      {
+        method: "POST",
+        ...options,
+        headers,
+        body: JSON.stringify({
+          source_path: sourcePath,
+          referrer,
+        }),
+        revalidate: CACHE.NO_CACHE,
+        tags: ["redirects", "redirect-404-logs"],
+      },
+      0,
+    );
+  }
+
   // ============================================================================
   // Store — Products, Categories, Brands, Collections, Orders
   // Note: Uses /api/public/store/ prefix (NOT /api/public/cms/)
@@ -787,6 +815,7 @@ export function createCmsClient(config: CmsClientConfig) {
     // Redirects
     fetchRedirects,
     resolveRedirect,
+    reportRedirect404,
     // Contact
     submitContactForm,
     // Store

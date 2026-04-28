@@ -18,3 +18,14 @@ export interface ResolvedRedirect {
   params: Record<string, string>;
   type: "manual" | "pattern";
 }
+
+export interface Redirect404Log {
+  id: string;
+  site_id: string;
+  source_path: string;
+  hit_count: number;
+  last_referrer?: string | null;
+  last_user_agent?: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
