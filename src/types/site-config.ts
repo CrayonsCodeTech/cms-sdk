@@ -2,6 +2,7 @@ export interface Branding {
   logo_primary?: string;
   logo_dark?: string;
   logo_secondary?: string;
+  favicon?: string;
 }
 
 export interface SocialLink {
