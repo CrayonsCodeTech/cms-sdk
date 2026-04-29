@@ -21,6 +21,7 @@ Content updates and management are handled through the CMS dashboard:
 - ⚡️ **Next.js Optimized**: Seamless integration with Next.js `fetch` (caching, revalidation, tags).
 - 🔄 **Resilient**: Automatic retries for transient server errors (502, 503, 504).
 - 🧱 **Structured**: Easy-to-use API for Headers, Footers, Blogs, Events, and more.
+- 🎨 **Section Variants**: All page sections support optional `variant` field (e.g., "home-1", "about-2") for flexible conditional styling.
 
 ## Installation
 
@@ -454,9 +455,13 @@ export default async function CatchAllPage({
 
 The `RenderSections` component is the core rendering primitive. It receives `page.sections` and maps each section type to its component. Every known section type from the CMS is handled; unknown types are warned and skipped.
 
+> **Important:** All section types include an optional `variant` field (e.g., `"home-1"`, `"about-1"`, `"contact-2"`). Use this for conditional rendering to create different visual styles of the same section type. See the example below for how to handle variants.
+
 ```tsx
 // components/render-sections.tsx
 import type { Section } from "@crayons/cms-sdk";
+
+// Import base section components
 import { HeroSection } from "@/components/sections/hero";
 import { CustomSection } from "@/components/sections/custom";
 import { CtaSection } from "@/components/sections/cta";
@@ -474,55 +479,84 @@ import { FaqSection } from "@/components/sections/faq";
 import { MarqueeSection } from "@/components/sections/marquee";
 import { HistorySection } from "@/components/sections/history";
 
+// Import variant components as needed (example imports)
+import { HeroDark } from "@/components/sections/hero-dark";
+import { HeroCentered } from "@/components/sections/hero-centered";
+import { CtaPrimary } from "@/components/sections/cta-primary";
+
 export function RenderSections({ sections }: { sections: Section[] }) {
   return (
     <>
       {sections.map((section) => {
+        // Each section has: { id, type, variant?, content }
+        // - id: auto-generated identifier (e.g., "hero-1", "custom-2", "cta-3")
+        // - type: section type discriminator (e.g., "hero", "custom", "cta")
+        // - variant: optional style variant (e.g., "home-1", "home-2", "about-1")
+        // - content: the actual content data for that section
+        //
+        // Example section object:
+        // { id: "hero-1", type: "hero", variant: "home-1", content: [...] }
         switch (section.type) {
           case "hero":
+            // Variant-aware rendering: check section.variant for conditional styling
+            if (section.variant === "home-1") {
+              return <HeroDark key={section.id} content={section.content} />;
+            }
+            if (section.variant === "home-2") {
+              return <HeroCentered key={section.id} content={section.content} />;
+            }
+            // Default fallback when variant is undefined/null
             return <HeroSection key={section.id} content={section.content} />;
+
           case "custom":
             return <CustomSection key={section.id} content={section.content} />;
+
           case "cta":
+            // Example: different CTA styles based on variant
+            if (section.variant === "home-1") {
+              return <CtaPrimary key={section.id} content={section.content} />;
+            }
             return <CtaSection key={section.id} content={section.content} />;
+
           case "service":
-            return (
-              <ServiceSection key={section.id} content={section.content} />
-            );
+            return <ServiceSection key={section.id} content={section.content} />;
+
           case "testimonial":
-            return (
-              <TestimonialSection key={section.id} content={section.content} />
-            );
+            return <TestimonialSection key={section.id} content={section.content} />;
+
           case "multi-value":
-            return (
-              <MultiValueSection key={section.id} content={section.content} />
-            );
+            return <MultiValueSection key={section.id} content={section.content} />;
+
           case "team":
             return <TeamSection key={section.id} content={section.content} />;
+
           case "clients":
-            return (
-              <ClientsSection key={section.id} content={section.content} />
-            );
+            return <ClientsSection key={section.id} content={section.content} />;
+
           case "gallery":
-            return (
-              <GallerySection key={section.id} content={section.content} />
-            );
+            return <GallerySection key={section.id} content={section.content} />;
+
           case "event":
             return <EventSection key={section.id} content={section.content} />;
+
           case "blog":
             return <BlogSection key={section.id} content={section.content} />;
+
           case "rich-content":
-            return (
-              <RichContentSection key={section.id} content={section.content} />
-            );
+            return <RichContentSection key={section.id} content={section.content} />;
+
           case "about":
             return <AboutSection key={section.id} content={section.content} />;
+
           case "faq":
             return <FaqSection key={section.id} content={section.content} />;
+
           case "marquee":
             return <MarqueeSection key={section.id} content={section.content} />;
+
           case "history":
             return <HistorySection key={section.id} content={section.content} />;
+
           default:
             console.warn(`Unknown section type: ${(section as any).type}`);
             return null;
@@ -532,6 +566,12 @@ export function RenderSections({ sections }: { sections: Section[] }) {
   );
 }
 ```
+
+> **Note:** Each section includes:
+> - **`id`**: Auto-generated unique identifier in format `{type}-{count}` (e.g., `"hero-1"`, `"hero-2"`, `"custom-1"`, `"cta-3"`). Useful for targeting specific sections or debugging.
+> - **`variant`**: Optional style variant (e.g., `"home-1"`, `"home-2"`, `"about-1"`) for conditional styling.
+>
+> Always provide a default fallback when `section.variant` is undefined or null. If your design doesn't use variants, you can simplify the switch cases to just render single components per type. Use `section.id` when you need to target or reference specific sections programmatically.
 
 #### Data-Driven Section Components
 
@@ -2511,6 +2551,8 @@ if (!services || services.length === 0) return <p>No services found.</p>;
 
 - **Site ID**: Always ensure your `SITE_ID` is valid, as most methods require it.
 - **Async Components**: Always use `await` when calling SDK methods inside Server Components.
+- **Section Variants**: All CMS sections have an optional `variant` field (e.g., `"home-1"`, `"about-2"`) for conditional styling. Check `section.variant` in your `RenderSections` component to render different visual styles of the same section type.
+- **Section IDs**: Each section has an auto-generated `id` in format `{type}-{count}` (e.g., `"hero-1"`, `"cta-2"`). Use this for targeting specific sections when needed.
 
 ---
 

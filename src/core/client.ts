@@ -523,14 +523,14 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
-  function fetchEventById(
+  function fetchEventBySlug(
     siteId: string,
-    id: string,
+    slug: string,
     options?: FetchOptions,
   ): Promise<Event | null> {
-    return cmsFetch<Event>(`/api/public/cms/${siteId}/events/${id}`, {
+    return cmsFetch<Event>(`/api/public/cms/${siteId}/events/${slug}`, {
       revalidate: CACHE.SHORT,
-      tags: ["events", `event-${id}`],
+      tags: ["events", `event-${slug}`],
       ...options,
     });
   }
@@ -669,10 +669,14 @@ export function createCmsClient(config: CmsClientConfig) {
 
   async function fetchProductCategories(
     siteId: string,
+    params?: { parent_id?: string | null },
     options?: FetchOptions,
   ): Promise<ProductCategory[]> {
+    const query = params?.parent_id !== undefined
+      ? `?parent_id=${params.parent_id === null ? "null" : params.parent_id}`
+      : "";
     const result = await cmsFetch<ProductCategory[]>(
-      `/api/public/store/${siteId}/categories/`,
+      `/api/public/store/${siteId}/categories/${query}`,
       {
         revalidate: CACHE.SHORT,
         tags: ["product-categories"],
@@ -808,7 +812,7 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchTestimonials,
     // Events
     fetchEvents,
-    fetchEventById,
+    fetchEventBySlug,
     // FAQ Groups
     fetchFaqGroups,
     fetchFaqs,
