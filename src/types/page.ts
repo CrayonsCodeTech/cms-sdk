@@ -28,7 +28,7 @@ export interface CustomContent {
   section_title: string | null;
   card_title: string;
   card_content: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
-  card_content_bol?: boolean | null;
+  card_content_bold?: boolean | null;
   cta?: CTA;
   image_src: string;
   image_src_two?: string | null;
@@ -71,9 +71,14 @@ export interface ServicesSection {
 }
 
 export interface GenericSection {
-  section_heading: string;
+  section_heading: string | null;
   title: string;
-  subtitle: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  subtitle: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+}
+
+export interface BlogSection extends GenericSection {
+  link?: string | null;
+  is_external?: boolean | null;
 }
 
 export interface ClientsSection extends GenericSection {
@@ -140,6 +145,7 @@ export interface MarqueeSection {
 export interface HistoryItem {
   year: string;
   title: string;
+  badge?: string | null;
   description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   image?: string | null;
   link?: string | null;
@@ -153,6 +159,26 @@ export interface HistorySection {
   items: HistoryItem[];
 }
 
+export type ProductSectionFilter = "collection" | "tag" | "category";
+
+export interface ProductsSection {
+  section_heading?: string | null;
+  title: string;
+  subtitle?: string | null;
+  filter?: ProductSectionFilter;
+  collection_id?: string | null;
+  category_id?: string | null;
+  tag_id?: string | null;
+  limit: number;
+}
+
+export interface CollectionGroupSection {
+  section_heading?: string | null;
+  title: string;
+  subtitle?: string | null;
+  collection_groups: string[];
+}
+
 export type Section =
   | { id: string; variant?: string | null; type: "hero"; content: HeroContent[] }
   | { id: string; variant?: string | null; type: "custom"; content: CustomContent }
@@ -164,12 +190,19 @@ export type Section =
   | { id: string; variant?: string | null; type: "clients"; content: ClientsSection }
   | { id: string; variant?: string | null; type: "gallery"; content: GallerySection }
   | { id: string; variant?: string | null; type: "event"; content: GenericSection }
-  | { id: string; variant?: string | null; type: "blog"; content: GenericSection }
+  | { id: string; variant?: string | null; type: "blog"; content: BlogSection }
   | { id: string; variant?: string | null; type: "rich-content"; content: RichContentSection }
   | { id: string; variant?: string | null; type: "about"; content: AboutSection }
   | { id: string; variant?: string | null; type: "faq"; content: FaqSection }
   | { id: string; variant?: string | null; type: "marquee"; content: MarqueeSection }
-  | { id: string; variant?: string | null; type: "history"; content: HistorySection };
+  | { id: string; variant?: string | null; type: "history"; content: HistorySection }
+  | { id: string; variant?: string | null; type: "products"; content: ProductsSection }
+  | {
+      id: string;
+      variant?: string | null;
+      type: "collection-group";
+      content: CollectionGroupSection;
+    };
 
 export interface SEO {
   title: string;
@@ -179,8 +212,8 @@ export interface SEO {
 }
 
 export interface Page {
-  id: number;
-  site_id: number;
+  id: string;
+  site_id: string;
   url: string;
   title: string;
   subtitle: string | null;

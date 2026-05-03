@@ -478,6 +478,8 @@ import { AboutSection } from "@/components/sections/about";
 import { FaqSection } from "@/components/sections/faq";
 import { MarqueeSection } from "@/components/sections/marquee";
 import { HistorySection } from "@/components/sections/history";
+import { ProductsSection } from "@/components/sections/products";
+import { CollectionGroupSection } from "@/components/sections/collection-group";
 
 // Import variant components as needed (example imports)
 import { HeroDark } from "@/components/sections/hero-dark";
@@ -557,6 +559,14 @@ export function RenderSections({ sections }: { sections: Section[] }) {
           case "history":
             return <HistorySection key={section.id} content={section.content} />;
 
+          case "products":
+            return <ProductsSection key={section.id} content={section.content} />;
+
+          case "collection-group":
+            return (
+              <CollectionGroupSection key={section.id} content={section.content} />
+            );
+
           default:
             console.warn(`Unknown section type: ${(section as any).type}`);
             return null;
@@ -593,12 +603,19 @@ Several section types only carry **display text** (headings, subtitles) in `sect
 | Gallery          | `"gallery"`         | `GallerySection`      | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
 | Events           | `"event"`           | `GenericSection`      | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
 | Blog             | `"blog"`            | `GenericSection`      | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
+| Products         | `"products"`        | `ProductsSection`     | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter` |
+| Collection Group | `"collection-group"` | `CollectionGroupSection` | `collections`              | `fetchCollections(siteId)` and filter by `content.collection_groups`                        |
 | Marquee          | `"marquee"`         | `MarqueeSection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
 | History          | `"history"`          | `HistorySection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
 
 **How to handle this in section components:**
 
 Each section component receives its own `content` prop from `RenderSections`. When it needs live entity data, it fetches it itself using the ID or type from `content`.
+
+For the new store-aware sections:
+
+- `products` content uses `filter` plus one of `collection_id`, `category_id`, or `tag_id`, along with `limit`
+- `collection-group` content uses `collection_groups: string[]`
 
 ```tsx
 // components/sections/testimonial.tsx
@@ -1342,7 +1359,7 @@ export const STORE_ENABLED = true;
 | `product.ts` | `Product`, `ProductVariant`, `ProductImage`, `ProductStatus` |
 | `product-category.ts` | `ProductCategory` |
 | `product-brand.ts` | `ProductBrand` |
-| `collection.ts` | `Collection`, `CollectionItem` |
+| `collection.ts` | `Collection`, `CollectionDetail`, `CollectionItem` |
 | `order.ts` | `Order`, `OrderItem`, `ShippingAddress`, `PlaceOrderPayload`, `CartItem`, `OrderStatus` |
 
 ```ts
@@ -1352,6 +1369,7 @@ import type {
   ProductCategory,
   ProductBrand,
   Collection,
+  CollectionDetail,
   CollectionItem,
   Order,
   PlaceOrderPayload,
@@ -1359,7 +1377,7 @@ import type {
 } from "@crayons/cms-sdk";
 ```
 
-> `Product.description` is HTML — render with `dangerouslySetInnerHTML`. `variants` is only present on `fetchProductDetail`, not on the list response.
+> `Product.description` is HTML — render with `dangerouslySetInnerHTML`. Public product variants expose `inventory` as a boolean plus `low_stock`. Collection detail responses normalize both manual and smart collections into `collection.items`.
 
 ---
 
@@ -1771,21 +1789,35 @@ import Link from "next/link";
 
 export default async function CollectionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ category_id?: string; page?: string }>;
 }) {
   const { slug } = await params;
-  const collection = await cms.fetchCollectionDetail(SITE_ID, slug);
+  const { category_id, page = "1" } = await searchParams;
+  const collection = await cms.fetchCollectionDetail(
+    SITE_ID,
+    slug,
+    {
+      category_id,
+      page: Number(page),
+      limit: 20,
+    },
+  );
 
   if (!collection) notFound();
 
-  // items are sorted by item.order from the API
+  // Works for both manual collections and smart collections
   const items = collection.items ?? [];
 
   return (
     <div>
       <h1>{collection.name}</h1>
       {collection.description && <p>{collection.description}</p>}
+      {collection.collection_type === "smart" && (
+        <p>This collection is populated automatically.</p>
+      )}
 
       <div className="grid">
         {items.map((item) => (
@@ -1803,12 +1835,19 @@ export default async function CollectionDetailPage({
           </Link>
         ))}
       </div>
+
+      {collection.pagination && (
+        <p>
+          Page {collection.pagination.page} • Total matched products:{" "}
+          {collection.pagination.total}
+        </p>
+      )}
     </div>
   );
 }
 ```
 
-> `collection.items` includes the full `product` object with `variants` — no extra fetch needed on the detail page.
+> `collection.items` includes the full `product` object with `variants` for both manual and smart collections. The backend resolves smart collections before returning the public detail payload.
 
 ---
 
@@ -2307,10 +2346,14 @@ export interface FetchOptions extends RequestInit {
 
 - `fetchProductCategories(siteId, options?)`: Returns all product categories.
 - `fetchProductBrands(siteId, options?)`: Returns all product brands.
-- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, brand_id, is_featured }`.
+- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`.
+  - `category_id` is hierarchy-aware on the backend and includes child/grandchild categories.
 - `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**.
 - `fetchCollections(siteId, options?)`: Returns all collections (with `_count.items`, no products).
-- `fetchCollectionDetail(siteId, slug, options?)`: Returns a single collection **with full `items` array** (products + variants included).
+- `fetchCollectionDetail(siteId, slug, params?, options?)`: Returns a single collection **with full `items` array** (products + variants included).
+  - Params: `{ page, limit, category_id }`
+  - Works for both manual and smart collections
+- `fetchCollectionDetailById(siteId, id, params?, options?)`: Same as `fetchCollectionDetail`, but keyed by collection ID for CMS-driven product sections.
 - `placeOrder(siteId, payload, options?)`: Places an order. Call from a server API route — never client-side.
 
 ## Type System

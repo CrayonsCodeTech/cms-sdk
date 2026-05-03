@@ -20,7 +20,7 @@ import type { ContactPayload, Contact } from "../types/contact";
 import type { Product, ProductListItem, ProductVariant } from "../types/product";
 import type { ProductCategory } from "../types/product-category";
 import type { ProductBrand } from "../types/product-brand";
-import type { Collection } from "../types/collection";
+import type { Collection, CollectionDetail } from "../types/collection";
 import type { Order, PlaceOrderPayload } from "../types/order";
 import type { StoreSettings } from "../types/store-setting";
 
@@ -708,6 +708,7 @@ export function createCmsClient(config: CmsClientConfig) {
       limit?: number;
       search?: string;
       category_id?: string;
+      tag_id?: string;
       brand_id?: string;
       is_featured?: "true" | "false";
     } = {},
@@ -754,13 +755,44 @@ export function createCmsClient(config: CmsClientConfig) {
   function fetchCollectionDetail(
     siteId: string,
     slug: string,
+    params: {
+      page?: number;
+      limit?: number;
+      category_id?: string;
+    } = {},
     options?: FetchOptions,
-  ): Promise<Collection | null> {
-    return cmsFetch<Collection>(
-      `/api/public/store/${siteId}/collections/${slug}/`,
+  ): Promise<CollectionDetail | null> {
+    const query = buildQueryString(params);
+    return cmsFetch<CollectionDetail>(
+      `/api/public/store/${siteId}/collections/${slug}/${
+        query ? `?${query}` : ""
+      }`,
       {
         revalidate: CACHE.SHORT,
         tags: ["collections", `collection-${slug}`],
+        ...options,
+      },
+    );
+  }
+
+  function fetchCollectionDetailById(
+    siteId: string,
+    id: string,
+    params: {
+      page?: number;
+      limit?: number;
+      category_id?: string;
+    } = {},
+    options?: FetchOptions,
+  ): Promise<CollectionDetail | null> {
+    const query = buildQueryString(params);
+    return cmsFetch<CollectionDetail>(
+      `/api/public/store/${siteId}/collections/id/${id}/${
+        query ? `?${query}` : ""
+      }`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["collections", `collection-${id}`],
         ...options,
       },
     );
@@ -830,6 +862,7 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchProductDetail,
     fetchCollections,
     fetchCollectionDetail,
+    fetchCollectionDetailById,
     placeOrder,
     // Generic fetch utilities
     fetch: cmsFetch,

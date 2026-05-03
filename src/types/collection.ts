@@ -1,23 +1,32 @@
-import type { Product, ProductVariant } from "./product";
+import type { PaginatedResponse } from "./pagination";
+import type { Product } from "./product";
 
 export interface CollectionItem {
   id: string;
   collection_id: string;
   product_id: string;
   order: number;
-  product: Product & { variants: ProductVariant[] };
+  product: Product;
 }
 
-export interface Collection {
+export interface CollectionListItem {
   id: string;
   site_id: string;
   name: string;
   slug: string;
   description: string | null;
-  is_published: true;
+  image_url?: string | null;
+  is_published: boolean;
+  collection_type: "manual" | "smart";
   order: number;
   created_at: string;
   updated_at: string;
-  _count?: { items: number }; // present on list response
-  items?: CollectionItem[]; // present on detail response
+  _count?: { items: number };
 }
+
+export interface CollectionDetail extends Omit<CollectionListItem, "_count"> {
+  items: CollectionItem[];
+  pagination?: PaginatedResponse<never>["pagination"];
+}
+
+export type Collection = CollectionListItem;
