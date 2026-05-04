@@ -763,19 +763,20 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
-  async function fetchCollections(
+  function fetchCollections(
     siteId: string,
+    params: { page?: number; limit?: number; search?: string } = {},
     options?: FetchOptions,
-  ): Promise<Collection[]> {
-    const result = await cmsFetch<Collection[]>(
-      `/api/public/store/${siteId}/collections/`,
+  ): Promise<PaginatedResponse<Collection>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<Collection>(
+      `/api/public/store/${siteId}/collections/${query ? `?${query}` : ""}`,
       {
         revalidate: CACHE.SHORT,
         tags: ["collections"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
   function fetchCollectionDetail(
