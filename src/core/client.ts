@@ -765,7 +765,13 @@ export function createCmsClient(config: CmsClientConfig) {
 
   function fetchCollections(
     siteId: string,
-    params: { page?: number; limit?: number; search?: string } = {},
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      /** Comma-separated list of collection IDs (e.g., "id1,id2") */
+      id?: string;
+    } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<Collection>> {
     const query = buildQueryString(params);

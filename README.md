@@ -604,7 +604,7 @@ Several section types only carry **display text** (headings, subtitles) in `sect
 | Events           | `"event"`           | `GenericSection`      | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
 | Blog             | `"blog"`            | `GenericSection`      | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
 | Products         | `"products"`        | `ProductsSection`     | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter` |
-| Collection Group | `"collection-group"` | `CollectionGroupSection` | `collections`              | `fetchCollections(siteId)` and filter by `content.collection_groups`                        |
+| Collection Group | `"collection-group"` | `CollectionGroupSection` | `collections`              | `fetchCollections(siteId, { id: content.collection_groups.join(',') })`                        |
 | Marquee          | `"marquee"`         | `MarqueeSection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
 | History          | `"history"`          | `HistorySection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
 
@@ -2349,7 +2349,7 @@ export interface FetchOptions extends RequestInit {
 - `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`.
   - `category_id` is hierarchy-aware on the backend and includes child/grandchild categories.
 - `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**.
-- `fetchCollections(siteId, options?)`: Returns all collections (with `_count.items`, no products).
+- `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, no products). Params: `{ page, limit, search, id }`. The `id` parameter accepts a comma-separated string of collection IDs (e.g., `"id1,id2"`) to filter the results.
 - `fetchCollectionDetail(siteId, slug, params?, options?)`: Returns a single collection **with full `items` array** (products + variants included).
   - Params: `{ page, limit, category_id }`
   - Works for both manual and smart collections
