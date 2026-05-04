@@ -1,5 +1,5 @@
 import { CACHE, PAGINATION } from "../constants";
-import type { PaginatedResponse } from "../types/pagination";
+import type { PaginatedResponse, PaginationMeta } from "../types/pagination";
 import type { Header } from "../types/header";
 import type { Footer } from "../types/footer";
 import type { SiteConfig } from "../types/site-config";
@@ -174,11 +174,11 @@ export function createCmsClient(config: CmsClientConfig) {
   }
 
   function buildQueryString(
-    params: Record<string, string | number | string[] | number[] | undefined>,
+    params: Record<string, string | number | string[] | number[] | undefined | null>,
   ): string {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
+      if (value !== undefined && value !== null) {
         if (Array.isArray(value)) {
           value.forEach((v) => query.append(key, String(v)));
         } else {
@@ -667,38 +667,47 @@ export function createCmsClient(config: CmsClientConfig) {
     });
   }
 
-  async function fetchProductCategories(
+  function fetchProductCategories(
     siteId: string,
-    params?: { parent_id?: string | null },
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      ordering?: string;
+      parent_id?: string | null;
+    } = {},
     options?: FetchOptions,
-  ): Promise<ProductCategory[]> {
-    const query = params?.parent_id !== undefined
-      ? `?parent_id=${params.parent_id === null ? "null" : params.parent_id}`
-      : "";
-    const result = await cmsFetch<ProductCategory[]>(
-      `/api/public/store/${siteId}/categories/${query}`,
+  ): Promise<PaginatedResponse<ProductCategory>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<ProductCategory>(
+      `/api/public/store/${siteId}/categories/${query ? `?${query}` : ""}`,
       {
         revalidate: CACHE.SHORT,
         tags: ["product-categories"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
-  async function fetchProductBrands(
+  function fetchProductBrands(
     siteId: string,
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      ordering?: string;
+    } = {},
     options?: FetchOptions,
-  ): Promise<ProductBrand[]> {
-    const result = await cmsFetch<ProductBrand[]>(
-      `/api/public/store/${siteId}/brands/`,
+  ): Promise<PaginatedResponse<ProductBrand>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<ProductBrand>(
+      `/api/public/store/${siteId}/brands/${query ? `?${query}` : ""}`,
       {
         revalidate: CACHE.SHORT,
         tags: ["product-brands"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
   function fetchProducts(
@@ -735,6 +744,23 @@ export function createCmsClient(config: CmsClientConfig) {
       tags: ["products", `product-${slug}`],
       ...options,
     });
+  }
+
+  function fetchProductsByTag(
+    siteId: string,
+    tag: string,
+    params: { page?: number; limit?: number } = {},
+    options?: FetchOptions,
+  ): Promise<{ products: Array<{ item: unknown; product: Product }>; pagination: PaginationMeta } | null> {
+    const query = buildQueryString({ tag, ...params });
+    return cmsFetch<{ products: Array<{ item: unknown; product: Product }>; pagination: PaginationMeta } | null>(
+      `/api/public/store/${siteId}/products/by-tag/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["products", `products-tag-${tag}`],
+        ...options,
+      },
+    );
   }
 
   async function fetchCollections(
@@ -860,6 +886,7 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchProductBrands,
     fetchProducts,
     fetchProductDetail,
+    fetchProductsByTag,
     fetchCollections,
     fetchCollectionDetail,
     fetchCollectionDetailById,
