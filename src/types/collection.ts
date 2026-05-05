@@ -1,5 +1,6 @@
 import type { PaginatedResponse } from "./pagination";
 import type { Product } from "./product";
+import type { ProductSEO, ProductExtraData } from "./seo";
 
 export interface CollectionItem {
   id: string;
@@ -18,6 +19,8 @@ export interface CollectionListItem {
   image_url?: string | null;
   is_published: boolean;
   collection_type: "manual" | "smart";
+  seo: ProductSEO | null;
+  extra: ProductExtraData | null;
   order: number;
   created_at: string;
   updated_at: string;

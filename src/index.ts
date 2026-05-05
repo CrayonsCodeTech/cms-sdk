@@ -7,6 +7,9 @@ export * from "./constants";
 // Types - Pagination
 export * from "./types/pagination";
 
+// Types - SEO
+export * from "./types/seo";
+
 // Types - CMS entities
 export * from "./types/api-response";
 export * from "./types/header";

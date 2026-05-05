@@ -1361,6 +1361,7 @@ export const STORE_ENABLED = true;
 | `product-brand.ts` | `ProductBrand` |
 | `collection.ts` | `Collection`, `CollectionDetail`, `CollectionItem` |
 | `order.ts` | `Order`, `OrderItem`, `ShippingAddress`, `PlaceOrderPayload`, `CartItem`, `OrderStatus` |
+| `seo.ts` | `ProductSEO`, `ProductExtraData` |
 
 ```ts
 import type {
@@ -1374,8 +1375,29 @@ import type {
   Order,
   PlaceOrderPayload,
   CartItem,
+  ProductSEO,
 } from "@crayons/cms-sdk";
 ```
+
+> **SEO and Extra Fields**
+> 
+> The following types include `seo` and `extra` fields:
+> - `Product`
+> - `ProductListItem`
+> - `ProductCategory`
+> - `ProductBrand`
+> - `Collection` / `CollectionListItem`
+> 
+> The `ProductSEO` interface contains:
+> ```ts
+> interface ProductSEO {
+>   title?: string | null;
+>   description?: string | null;
+>   tags?: string[] | null;
+> }
+> ```
+> 
+> `ProductExtraData` is a flexible `Record<string, unknown>` for custom data.
 
 > `Product.description` is HTML — render with `dangerouslySetInnerHTML`. Public product variants expose `inventory` as a boolean plus `low_stock`. Collection detail responses normalize both manual and smart collections into `collection.items`.
 

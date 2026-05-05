@@ -1,3 +1,5 @@
+import type { ProductSEO, ProductExtraData } from "./seo";
+
 export type ProductStatus = "draft" | "published" | "archived" | "out_of_stock";
 
 export interface ProductImage {
@@ -56,6 +58,8 @@ export interface ProductListItem {
   status: ProductStatus;
   is_featured: boolean;
   thumbnail_url: string | null;
+  seo: ProductSEO | null;
+  extra: ProductExtraData | null;
   created_at: string;
   variants?: ProductVariantListItem[];
 }
