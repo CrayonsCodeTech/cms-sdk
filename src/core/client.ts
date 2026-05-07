@@ -720,6 +720,10 @@ export function createCmsClient(config: CmsClientConfig) {
       tag_id?: string;
       brand_id?: string;
       is_featured?: "true" | "false";
+      sort?: "price_asc" | "price_desc";
+      min_price?: number;
+      max_price?: number;
+      availability?: "in_stock" | "out_of_stock";
     } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<ProductListItem>> {
