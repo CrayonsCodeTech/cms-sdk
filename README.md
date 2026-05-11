@@ -1,4 +1,5 @@
 # @crayonscodetech/cms-sdk
+
 A robust, type-safe SDK/Package for fetching data from the Crayons CMS. Designed for Next.js.
 
 ## Technical Overview
@@ -504,7 +505,9 @@ export function RenderSections({ sections }: { sections: Section[] }) {
               return <HeroDark key={section.id} content={section.content} />;
             }
             if (section.variant === "home-2") {
-              return <HeroCentered key={section.id} content={section.content} />;
+              return (
+                <HeroCentered key={section.id} content={section.content} />
+              );
             }
             // Default fallback when variant is undefined/null
             return <HeroSection key={section.id} content={section.content} />;
@@ -520,22 +523,32 @@ export function RenderSections({ sections }: { sections: Section[] }) {
             return <CtaSection key={section.id} content={section.content} />;
 
           case "service":
-            return <ServiceSection key={section.id} content={section.content} />;
+            return (
+              <ServiceSection key={section.id} content={section.content} />
+            );
 
           case "testimonial":
-            return <TestimonialSection key={section.id} content={section.content} />;
+            return (
+              <TestimonialSection key={section.id} content={section.content} />
+            );
 
           case "multi-value":
-            return <MultiValueSection key={section.id} content={section.content} />;
+            return (
+              <MultiValueSection key={section.id} content={section.content} />
+            );
 
           case "team":
             return <TeamSection key={section.id} content={section.content} />;
 
           case "clients":
-            return <ClientsSection key={section.id} content={section.content} />;
+            return (
+              <ClientsSection key={section.id} content={section.content} />
+            );
 
           case "gallery":
-            return <GallerySection key={section.id} content={section.content} />;
+            return (
+              <GallerySection key={section.id} content={section.content} />
+            );
 
           case "event":
             return <EventSection key={section.id} content={section.content} />;
@@ -544,7 +557,9 @@ export function RenderSections({ sections }: { sections: Section[] }) {
             return <BlogSection key={section.id} content={section.content} />;
 
           case "rich-content":
-            return <RichContentSection key={section.id} content={section.content} />;
+            return (
+              <RichContentSection key={section.id} content={section.content} />
+            );
 
           case "about":
             return <AboutSection key={section.id} content={section.content} />;
@@ -553,17 +568,26 @@ export function RenderSections({ sections }: { sections: Section[] }) {
             return <FaqSection key={section.id} content={section.content} />;
 
           case "marquee":
-            return <MarqueeSection key={section.id} content={section.content} />;
+            return (
+              <MarqueeSection key={section.id} content={section.content} />
+            );
 
           case "history":
-            return <HistorySection key={section.id} content={section.content} />;
+            return (
+              <HistorySection key={section.id} content={section.content} />
+            );
 
           case "products":
-            return <ProductsSection key={section.id} content={section.content} />;
+            return (
+              <ProductsSection key={section.id} content={section.content} />
+            );
 
           case "collection-group":
             return (
-              <CollectionGroupSection key={section.id} content={section.content} />
+              <CollectionGroupSection
+                key={section.id}
+                content={section.content}
+              />
             );
 
           default:
@@ -577,6 +601,7 @@ export function RenderSections({ sections }: { sections: Section[] }) {
 ```
 
 > **Note:** Each section includes:
+>
 > - **`id`**: Auto-generated unique identifier in format `{type}-{count}` (e.g., `"hero-1"`, `"hero-2"`, `"custom-1"`, `"cta-3"`). Useful for targeting specific sections or debugging.
 > - **`variant`**: Optional style variant (e.g., `"home-1"`, `"home-2"`, `"about-1"`) for conditional styling.
 >
@@ -586,26 +611,26 @@ export function RenderSections({ sections }: { sections: Section[] }) {
 
 Several section types only carry **display text** (headings, subtitles) in `section.content`. The actual entity data must be fetched separately and passed into the section component. This is the same pattern as services, blogs, and events — just applied inside individual section components.
 
-| Section name     | `type` discriminant | Content type          | Primary table/entity          | API call(s) needed                                                                          |
-| ---------------- | ------------------- | --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
-| Hero             | `"hero"`            | `HeroContent[]`       | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Custom           | `"custom"`          | `CustomContent`       | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Call to Action   | `"cta"`             | `CTAContent`          | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Rich Content     | `"rich-content"`    | `RichContentSection`  | `page.sections` (from `page`) | None — content is inline                                                                    |
-| About            | `"about"`           | `AboutSection`        | `page.sections` + `about-us`  | `fetchAboutUs(siteId)` for profile/vision/mission/stats                                     |
-| Multi Value      | `"multi-value"`     | `MultiValueSection`   | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Services         | `"service"`         | `ServicesSection`     | `services`                    | `fetchServices(siteId)`                                                                     |
-| Testimonials     | `"testimonial"`     | `TestimonialsSection` | `testimonials`                | `fetchTestimonials(siteId, { type })` — use `content.type` to filter                        |
-| Team             | `"team"`            | `TeamSection`         | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, content.team_category_id)` |
-| FAQ              | `"faq"`             | `FaqSection`          | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`             |
-| Clients / Brands | `"clients"`         | `ClientsSection`      | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`    |
-| Gallery          | `"gallery"`         | `GallerySection`      | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
-| Events           | `"event"`           | `GenericSection`      | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
-| Blog             | `"blog"`            | `GenericSection`      | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
-| Products         | `"products"`        | `ProductsSection`     | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter` |
-| Collection Group | `"collection-group"` | `CollectionGroupSection` | `collections`              | `fetchCollections(siteId, { id: content.collection_groups.join(',') })`                        |
-| Marquee          | `"marquee"`         | `MarqueeSection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
-| History          | `"history"`          | `HistorySection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Section name     | `type` discriminant  | Content type             | Primary table/entity          | API call(s) needed                                                                          |
+| ---------------- | -------------------- | ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------- |
+| Hero             | `"hero"`             | `HeroContent[]`          | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Custom           | `"custom"`           | `CustomContent`          | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Call to Action   | `"cta"`              | `CTAContent`             | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Rich Content     | `"rich-content"`     | `RichContentSection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
+| About            | `"about"`            | `AboutSection`           | `page.sections` + `about-us`  | `fetchAboutUs(siteId)` for profile/vision/mission/stats                                     |
+| Multi Value      | `"multi-value"`      | `MultiValueSection`      | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Services         | `"service"`          | `ServicesSection`        | `services`                    | `fetchServices(siteId)`                                                                     |
+| Testimonials     | `"testimonial"`      | `TestimonialsSection`    | `testimonials`                | `fetchTestimonials(siteId, { type })` — use `content.type` to filter                        |
+| Team             | `"team"`             | `TeamSection`            | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, content.team_category_id)` |
+| FAQ              | `"faq"`              | `FaqSection`             | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`             |
+| Clients / Brands | `"clients"`          | `ClientsSection`         | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`    |
+| Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
+| Events           | `"event"`            | `GenericSection`         | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
+| Blog             | `"blog"`             | `GenericSection`         | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
+| Products         | `"products"`         | `ProductsSection`        | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter`     |
+| Collection Group | `"collection-group"` | `CollectionGroupSection` | `collections`                 | `fetchCollections(siteId, { id: content.collection_groups.join(',') })`                     |
+| Marquee          | `"marquee"`          | `MarqueeSection`         | `page.sections` (from `page`) | None — content is inline                                                                    |
+| History          | `"history"`          | `HistorySection`         | `page.sections` (from `page`) | None — content is inline                                                                    |
 
 **How to handle this in section components:**
 
@@ -744,21 +769,21 @@ Different page types follow different rendering strategies. Understanding these 
 
 ### Page Fetch Map (Route -> Table/Entity -> SDK Fetch)
 
-| Route                   | Primary tables/entities           | Required fetch call(s)                                                         |
-| ----------------------- | --------------------------------- | ------------------------------------------------------------------------------ |
-| `/` (home)              | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")`                                                  |
-| `[[...slug]]` CMS pages | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)`                                              |
-| `/about`                | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                    |
-| `/services`             | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                |
-| `/services/[slug]`      | `services`                        | `fetchServices(siteId)` (slug lookup) or `fetchServiceById(siteId, id)`        |
+| Route                   | Primary tables/entities           | Required fetch call(s)                                                                          |
+| ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `/` (home)              | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")`                                                                   |
+| `[[...slug]]` CMS pages | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)`                                                               |
+| `/about`                | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                                     |
+| `/services`             | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                                 |
+| `/services/[slug]`      | `services`                        | `fetchServices(siteId)` (slug lookup) or `fetchServiceById(siteId, id)`                         |
 | `/blog` or `/news`      | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` (or your CMS-defined base url) + `fetchBlogs(siteId, params)` |
-| `/blog/[slug]`          | `blog`                            | `fetchBlogBySlug(siteId, slug)`                                                 |
-| `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`            |
-| `/events/[slug]`        | `events`                          | `fetchEvents(siteId, { limit })` (slug lookup) or `fetchEventById(siteId, id)` |
-| `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`           |
-| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })`  |
-| `/team/[slug]`          | `team-members`                    | `fetchTeamMembers(siteId)` (slug lookup) or custom `fetch`                     |
-| `/contact`              | `contact` (form submissions)      | `submitContactForm(siteId, payload)`                                           |
+| `/blog/[slug]`          | `blog`                            | `fetchBlogBySlug(siteId, slug)`                                                                 |
+| `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`                             |
+| `/events/[slug]`        | `events`                          | `fetchEvents(siteId, { limit })` (slug lookup) or `fetchEventById(siteId, id)`                  |
+| `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
+| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })`                   |
+| `/team/[slug]`          | `team-members`                    | `fetchTeamMembers(siteId)` (slug lookup) or custom `fetch`                                      |
+| `/contact`              | `contact` (form submissions)      | `submitContactForm(siteId, payload)`                                                            |
 
 ### Home Page — Section Rendering with Targeting
 
@@ -1336,11 +1361,11 @@ The store is a separate product/e-commerce layer built on top of the CMS. It use
 
 ### Overview
 
-| Concern | CMS | Store |
-|---|---|---|
-| API prefix | `/api/public/cms/{siteId}/` | `/api/public/store/{siteId}/` |
-| Route management | CMS dashboard (page_type) | Hardcoded in `[[...slug]]` |
-| Content editing | Via CMS | Via store admin |
+| Concern          | CMS                         | Store                         |
+| ---------------- | --------------------------- | ----------------------------- |
+| API prefix       | `/api/public/cms/{siteId}/` | `/api/public/store/{siteId}/` |
+| Route management | CMS dashboard (page_type)   | Hardcoded in `[[...slug]]`    |
+| Content editing  | Via CMS                     | Via store admin               |
 
 **Feature flag** — gate all store UI behind a constant so it can be disabled per project:
 
@@ -1353,14 +1378,14 @@ export const STORE_ENABLED = true;
 
 ### Store Types
 
-| File | Exports |
-|---|---|
-| `product.ts` | `Product`, `ProductVariant`, `ProductImage`, `ProductStatus` |
-| `product-category.ts` | `ProductCategory` |
-| `product-brand.ts` | `ProductBrand` |
-| `collection.ts` | `Collection`, `CollectionDetail`, `CollectionItem` |
-| `order.ts` | `Order`, `OrderItem`, `ShippingAddress`, `PlaceOrderPayload`, `CartItem`, `OrderStatus` |
-| `seo.ts` | `ProductSEO`, `ProductExtraData` |
+| File                  | Exports                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| `product.ts`          | `Product`, `ProductVariant`, `ProductImage`, `ProductStatus`                            |
+| `product-category.ts` | `ProductCategory`                                                                       |
+| `product-brand.ts`    | `ProductBrand`                                                                          |
+| `collection.ts`       | `Collection`, `CollectionDetail`, `CollectionItem`                                      |
+| `order.ts`            | `Order`, `OrderItem`, `ShippingAddress`, `PlaceOrderPayload`, `CartItem`, `OrderStatus` |
+| `seo.ts`              | `ProductSEO`, `ProductExtraData`                                                        |
 
 ```ts
 import type {
@@ -1379,15 +1404,17 @@ import type {
 ```
 
 > **SEO and Extra Fields**
-> 
+>
 > The following types include `seo` and `extra` fields:
+>
 > - `Product`
 > - `ProductListItem`
 > - `ProductCategory`
 > - `ProductBrand`
 > - `Collection` / `CollectionListItem`
-> 
+>
 > The `ProductSEO` interface contains:
+>
 > ```ts
 > interface ProductSEO {
 >   title?: string | null;
@@ -1395,7 +1422,7 @@ import type {
 >   tags?: string[] | null;
 > }
 > ```
-> 
+>
 > `ProductExtraData` is a flexible `Record<string, unknown>` for custom data.
 
 > `Product.description` is HTML — render with `dangerouslySetInnerHTML`. Public product variants expose `inventory` as a boolean plus `low_stock`. Collection detail responses normalize both manual and smart collections into `collection.items`.
@@ -1435,7 +1462,10 @@ export default async function CatchAll({ params, searchParams }) {
   const { slug = [] } = await params;
 
   // ── Store routes (resolved before CMS pages) ──────────────────────────────
-  if (!STORE_ENABLED && ["products","categories","brands","collections"].includes(slug[0])) {
+  if (
+    !STORE_ENABLED &&
+    ["products", "categories", "brands", "collections"].includes(slug[0])
+  ) {
     notFound();
   }
 
@@ -1446,12 +1476,22 @@ export default async function CatchAll({ params, searchParams }) {
 
   if (slug[0] === "categories") {
     if (slug.length === 1) return <ProductCategoriesPage />;
-    return <CategoryProductsPage params={Promise.resolve({ slug: slug[1] })} searchParams={searchParams} />;
+    return (
+      <CategoryProductsPage
+        params={Promise.resolve({ slug: slug[1] })}
+        searchParams={searchParams}
+      />
+    );
   }
 
   if (slug[0] === "brands") {
     if (slug.length === 1) return <BrandsPage />;
-    return <BrandProductsPage params={Promise.resolve({ slug: slug[1] })} searchParams={searchParams} />;
+    return (
+      <BrandProductsPage
+        params={Promise.resolve({ slug: slug[1] })}
+        searchParams={searchParams}
+      />
+    );
   }
 
   if (slug[0] === "collections") {
@@ -1475,7 +1515,11 @@ import type { Product, ProductCategory } from "@crayons/cms-sdk";
 import Link from "next/link";
 
 interface Props {
-  searchParams: Promise<{ page?: string; search?: string; category_id?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    search?: string;
+    category_id?: string;
+  }>;
 }
 
 export default async function ProductsPage({ searchParams }: Props) {
@@ -1518,7 +1562,9 @@ export default async function ProductsPage({ searchParams }: Props) {
       </div>
 
       {/* Pagination */}
-      <p>Page {pagination.page} • Total products: {pagination.total}</p>
+      <p>
+        Page {pagination.page} • Total products: {pagination.total}
+      </p>
     </div>
   );
 }
@@ -1561,7 +1607,7 @@ import { useCart } from "@/context/CartContext";
 export default function ProductDetailClient({ product }: { product: Product }) {
   const { addItem } = useCart();
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(
-    product.variants?.[0] ?? null
+    product.variants?.[0] ?? null,
   );
   const [quantity, setQuantity] = useState(1);
 
@@ -1596,7 +1642,9 @@ export default function ProductDetailClient({ product }: { product: Product }) {
 
       {/* Quantity + add to cart */}
       <div>
-        <button onClick={() => setQuantity((q) => Math.max(1, q - 1))}>-</button>
+        <button onClick={() => setQuantity((q) => Math.max(1, q - 1))}>
+          -
+        </button>
         <span>{quantity}</span>
         <button onClick={() => setQuantity((q) => q + 1)}>+</button>
       </div>
@@ -1616,7 +1664,9 @@ export default function ProductDetailClient({ product }: { product: Product }) {
           <div key={group}>
             <h3>{group}</h3>
             {Object.entries(specs).map(([k, v]) => (
-              <p key={k}><strong>{k}:</strong> {v}</p>
+              <p key={k}>
+                <strong>{k}:</strong> {v}
+              </p>
             ))}
           </div>
         ))}
@@ -1664,7 +1714,10 @@ interface Props {
   searchParams: Promise<{ page?: string; search?: string }>;
 }
 
-export default async function CategoryProductsPage({ params, searchParams }: Props) {
+export default async function CategoryProductsPage({
+  params,
+  searchParams,
+}: Props) {
   const { slug } = await params;
   const { page = "1", search } = await searchParams;
 
@@ -1739,7 +1792,10 @@ interface Props {
   searchParams: Promise<{ page?: string; search?: string }>;
 }
 
-export default async function BrandProductsPage({ params, searchParams }: Props) {
+export default async function BrandProductsPage({
+  params,
+  searchParams,
+}: Props) {
   const { slug } = await params;
   const { page = "1", search } = await searchParams;
 
@@ -1817,15 +1873,11 @@ export default async function CollectionDetailPage({
 }) {
   const { slug } = await params;
   const { category_id, page = "1" } = await searchParams;
-  const collection = await cms.fetchCollectionDetail(
-    SITE_ID,
-    slug,
-    {
-      category_id,
-      page: Number(page),
-      limit: 20,
-    },
-  );
+  const collection = await cms.fetchCollectionDetail(SITE_ID, slug, {
+    category_id,
+    page: Number(page),
+    limit: 20,
+  });
 
   if (!collection) notFound();
 
@@ -1850,7 +1902,10 @@ export default async function CollectionDetailPage({
             {/* Show lowest variant price */}
             {item.product.variants.length > 0 && (
               <p>
-                From ${Math.min(...item.product.variants.map((v) => v.sale_price ?? v.price))}
+                From $
+                {Math.min(
+                  ...item.product.variants.map((v) => v.sale_price ?? v.price),
+                )}
               </p>
             )}
           </Link>
@@ -1888,7 +1943,11 @@ interface CartContextValue {
   totalItems: number;
   subtotal: number;
   isOpen: boolean;
-  addItem: (product: Product, variant: ProductVariant, quantity: number) => void;
+  addItem: (
+    product: Product,
+    variant: ProductVariant,
+    quantity: number,
+  ) => void;
   removeItem: (variantId: string) => void;
   updateQuantity: (variantId: string, quantity: number) => void;
   clearCart: () => void;
@@ -1913,14 +1972,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("cart", JSON.stringify(items));
   }, [items]);
 
-  function addItem(product: Product, variant: ProductVariant, quantity: number) {
+  function addItem(
+    product: Product,
+    variant: ProductVariant,
+    quantity: number,
+  ) {
     setItems((prev) => {
       const existing = prev.find((i) => i.variant.id === variant.id);
       if (existing) {
         return prev.map((i) =>
           i.variant.id === variant.id
             ? { ...i, quantity: i.quantity + quantity }
-            : i
+            : i,
         );
       }
       return [...prev, { product, variant, quantity }];
@@ -1933,7 +1996,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   function updateQuantity(variantId: string, quantity: number) {
     setItems((prev) =>
-      prev.map((i) => (i.variant.id === variantId ? { ...i, quantity } : i))
+      prev.map((i) => (i.variant.id === variantId ? { ...i, quantity } : i)),
     );
   }
 
@@ -1944,7 +2007,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
   const subtotal = items.reduce(
     (sum, i) => sum + (i.variant.sale_price ?? i.variant.price) * i.quantity,
-    0
+    0,
   );
 
   return (
@@ -2025,7 +2088,9 @@ import { useCart } from "@/context/CartContext";
 
 export function CheckoutForm() {
   const { items, subtotal, clearCart } = useCart();
-  const [status, setStatus] = useState<"idle" | "placing" | "success" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "placing" | "success" | "error"
+  >("idle");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -2033,9 +2098,12 @@ export function CheckoutForm() {
 
     const form = e.currentTarget;
     const payload: PlaceOrderPayload = {
-      customer_name: (form.elements.namedItem("name") as HTMLInputElement).value,
-      customer_email: (form.elements.namedItem("email") as HTMLInputElement).value,
-      customer_phone: (form.elements.namedItem("phone") as HTMLInputElement).value || null,
+      customer_name: (form.elements.namedItem("name") as HTMLInputElement)
+        .value,
+      customer_email: (form.elements.namedItem("email") as HTMLInputElement)
+        .value,
+      customer_phone:
+        (form.elements.namedItem("phone") as HTMLInputElement).value || null,
       shipping_address: {
         line1: (form.elements.namedItem("line1") as HTMLInputElement).value,
         city: (form.elements.namedItem("city") as HTMLInputElement).value,
@@ -2046,7 +2114,8 @@ export function CheckoutForm() {
         product_variant_id: i.variant.id,
         quantity: i.quantity,
       })),
-      notes: (form.elements.namedItem("notes") as HTMLTextAreaElement).value || null,
+      notes:
+        (form.elements.namedItem("notes") as HTMLTextAreaElement).value || null,
     };
 
     const res = await fetch("/api/store/orders", {
@@ -2076,7 +2145,10 @@ export function CheckoutForm() {
 
       <p>Subtotal: ${subtotal.toFixed(2)}</p>
 
-      <button type="submit" disabled={status === "placing" || items.length === 0}>
+      <button
+        type="submit"
+        disabled={status === "placing" || items.length === 0}
+      >
         {status === "placing" ? "Placing order…" : "Place Order"}
       </button>
       {status === "success" && <p>Order placed successfully!</p>}
@@ -2088,9 +2160,195 @@ export function CheckoutForm() {
 
 ---
 
+## Redirects
+
+The CMS supports managed redirects (301/302/307/308) configured through the dashboard. The SDK provides three methods:
+
+| Method                                             | Use                                                                     |
+| -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `resolveRedirect(siteId, sourcePath)`              | Resolve a single path — use this in middleware                          |
+| `fetchRedirects(siteId)`                           | Fetch all redirects — use this in `next.config.ts` for static redirects |
+| `reportRedirect404(siteId, sourcePath, referrer?)` | Log a 404 hit so the CMS can suggest redirect candidates                |
+
+`resolveRedirect` supports both **manual** redirects (exact path match) and **pattern** redirects (e.g. `/blog/:slug → /news/:slug`). When a pattern matches, `ResolvedRedirect.params` contains the captured values and `destinationPath` already has them substituted in.
+
+---
+
+### Option A — Middleware (Recommended)
+
+Handle redirects at the edge before any page renders. This is the correct approach for SSR/ISR apps deployed to Vercel, Cloudflare Workers, or any edge runtime.
+
+Use the shared CMS client singleton from `@/lib/cms` — do **not** create a new client inside middleware.
+
+```ts
+// middleware.ts
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { cms, SITE_ID } from "@/lib/cms";
+
+export async function middleware(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+
+  // Skip internal Next.js paths, API routes, static assets, and home page
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.includes(".") ||
+    pathname === "/"
+  ) {
+    return NextResponse.next();
+  }
+
+  // Normalize trailing slash for consistent CMS lookup
+  const normalizedPath =
+    pathname.length > 1 && pathname.endsWith("/")
+      ? pathname.slice(0, -1)
+      : pathname;
+
+  try {
+    const resolution = await cms.resolveRedirect(SITE_ID, normalizedPath);
+
+    if (resolution && resolution.redirect.enabled) {
+      const { destinationPath, redirect } = resolution;
+      const destinationUrl = new URL(destinationPath, request.url);
+
+      // Forward original query string if destination has none
+      if (search && !destinationUrl.search) {
+        destinationUrl.search = search;
+      }
+
+      return NextResponse.redirect(destinationUrl, {
+        status: redirect.status_code || 301,
+      });
+    }
+  } catch (error) {
+    // Silently continue — never let redirect errors break page rendering
+    console.error("Middleware redirect resolution error:", error);
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|assets|sitemap.xml|robots.txt).*)",
+  ],
+};
+```
+
+> **Edge Runtime note**: `cms.resolveRedirect` uses `fetch` internally, which is available in both Node.js and Edge runtimes. This middleware is safe to deploy to Cloudflare Workers and Vercel Edge.
+
+---
+
+### Option B — `next.config.ts` (Static only)
+
+Use this when you want redirects baked in at build time (no runtime latency). Suitable for a small, infrequently-changing redirect list.
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+import { createCmsClient } from "@crayons/cms-sdk";
+
+const cms = createCmsClient({
+  baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL || "",
+});
+
+const SITE_ID = process.env.NEXT_PUBLIC_CMS_SITE_ID || "";
+
+const nextConfig: NextConfig = {
+  async redirects() {
+    const redirects = await cms.fetchRedirects(SITE_ID);
+
+    return redirects
+      .filter((r) => r.enabled)
+      .map((r) => ({
+        source: r.source_path,
+        destination: r.destination_path,
+        permanent: r.status_code === 301 || r.status_code === 308,
+      }));
+  },
+};
+
+export default nextConfig;
+```
+
+> **Limitation**: These are resolved once at build time. New redirects added in the CMS dashboard won't take effect until the next deployment. Use middleware (Option A) if redirects need to update without a redeploy.
+
+---
+
+### Logging 404s as Redirect Candidates
+
+`reportRedirect404` must be called from a **client component** — `not-found.tsx` runs before the URL is known server-side, so `window.location.pathname` is the reliable source. Create a small `NotFoundLogger` client component and drop it into your `not-found.tsx`.
+
+```tsx
+// components/shared/NotFoundLogger.tsx
+"use client";
+
+import { useEffect } from "react";
+import { cms, SITE_ID } from "@/lib/cms";
+
+// Module-level deduplication flag (prevents React Strict Mode double-fire in dev)
+declare global {
+  interface Window {
+    __lastRedirect404Log?: { path: string; timestamp: number };
+  }
+}
+
+export default function NotFoundLogger() {
+  useEffect(() => {
+    if (!SITE_ID || typeof window === "undefined") return;
+
+    const pathname = window.location.pathname;
+    if (!pathname || pathname === "/") return;
+
+    const now = Date.now();
+    const previous = window.__lastRedirect404Log;
+
+    // Skip duplicate reports within 1 second (Strict Mode remounts)
+    if (previous?.path === pathname && now - previous.timestamp < 1000) return;
+
+    window.__lastRedirect404Log = { path: pathname, timestamp: now };
+
+    void cms.reportRedirect404(
+      SITE_ID,
+      pathname,
+      document.referrer || undefined,
+      {
+        cache: "no-store",
+      },
+    );
+  }, []);
+
+  return null;
+}
+```
+
+```tsx
+// app/not-found.tsx
+import NotFoundLogger from "@/components/shared/NotFoundLogger";
+
+export default function NotFoundPage() {
+  return (
+    <>
+      <NotFoundLogger />
+      <main>
+        <h1>Page not found</h1>
+        <p>The page you are looking for does not exist.</p>
+      </main>
+    </>
+  );
+}
+```
+
+> The logger renders nothing — it only fires the `reportRedirect404` call on mount. The CMS dashboard accumulates these hits and surfaces high-frequency 404 paths as redirect candidates.
+
+---
+
 ## SEO & Metadata
 
 Every `Page` returned by `fetchPageByUrl` or `fetchPages` includes an `seo` field (`SEO | null`) with `title`, `description`, `tags`, and `image`. Use Next.js `generateMetadata` to apply this per page, falling back to the site-wide defaults from `SiteConfig`.
+
+> **Required env var for canonical URLs**: add `NEXT_PUBLIC_SITE_URL=https://www.yoursite.com` (your website's own domain — not the CMS API URL) to `.env.local`. Without it, `canonical` and `og:url` tags are omitted.
 
 ```tsx
 // app/[[...slug]]/page.tsx
@@ -2111,7 +2369,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   ]);
 
   const siteName = siteConfig?.site_name ?? "";
-  const baseUrl = process.env.NEXT_PUBLIC_CMS_BASE_URL ?? "";
+  // NEXT_PUBLIC_SITE_URL is your website's own domain (e.g. https://www.example.com),
+  // NOT the CMS API URL.
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
 
   if (!page?.seo) {
     return { title: siteName };
@@ -2126,7 +2386,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title: title ?? siteName,
       description: description ?? undefined,
-      url: `${baseUrl}${urlPath}`,
+      url: siteUrl ? `${siteUrl}${urlPath}` : undefined,
       siteName,
       images: image ? [{ url: image }] : undefined,
     },
@@ -2136,9 +2396,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: description ?? undefined,
       images: image ? [image] : undefined,
     },
-    alternates: {
-      canonical: `${baseUrl}${urlPath}`,
-    },
+    ...(siteUrl && {
+      alternates: {
+        canonical: `${siteUrl}${urlPath}`,
+      },
+    }),
   };
 }
 ```
@@ -2342,6 +2604,12 @@ export interface FetchOptions extends RequestInit {
 - `fetchAlbums(siteId, params?, options?)`: Returns paginated albums.
 - `fetchAlbumItems(siteId, params, options?)`: Returns items for an album. Params: `{ album, album_id }`.
 
+### Redirects
+
+- `fetchRedirects(siteId, options?)`: Returns all enabled and disabled redirects. Use in `next.config.ts` for build-time static redirects.
+- `resolveRedirect(siteId, sourcePath, options?)`: Resolves a single path against CMS redirects. Returns `ResolvedRedirect` (with `destinationPath`, `params`, `type`) or `null`. Supports pattern redirects with captured params. Use in middleware.
+- `reportRedirect404(siteId, sourcePath, referrer?, options?)`: Logs a 404 hit to the CMS for redirect candidate tracking. Call fire-and-forget from `not-found.tsx`.
+
 ### FAQ & Help
 
 - `fetchFaqGroups(siteId, options?)`: Returns FAQ groups with their nested FAQs.
@@ -2393,6 +2661,9 @@ import type {
   ContactPayload, // Use for form submission
   SiteConfig,
   PaginatedResponse,
+  Redirect,
+  ResolvedRedirect,
+  RedirectStatusCode,
 } from "@crayons/cms-sdk";
 ```
 
@@ -2559,7 +2830,7 @@ import Link from "next/link";
 // In your Header or Page
 {
   pages.map((page) => (
-    <Link key={page.id} href={page.url === "/" ? "/" : `/${page.url}`}>
+    <Link key={page.id} href={page.url}>
       {page.title}
     </Link>
   ));
@@ -2628,9 +2899,9 @@ This is the complete picture of how a page request travels through the system fr
 
 A user visits any URL, e.g. `/services` or `/blog/my-post`. Next.js routes every request to the single catch-all file: `app/[[...slug]]/page.tsx`.
 
-### Step 2 — Catch-all fetches the pages list
+### Step 2 — Catch-all fetches the page by URL
 
-The catch-all should call `fetchPageByUrl(siteId, urlPath)` for the current request path first. This means pages are fetched on-demand only when users navigate to them (SSR-friendly dynamic routing).
+The catch-all calls `fetchPageByUrl(siteId, urlPath)` for the current request path. Pages are fetched on-demand only when users navigate to them (SSR-friendly dynamic routing).
 
 ### Step 3 — URL is matched to a page
 
@@ -2676,13 +2947,13 @@ The root `layout.tsx` runs on every request independently of the catch-all. It c
 
 ### Summary in one line per step
 
-| Step | What happens |
-|------|-------------|
-| 1 | Browser hits any URL → Next.js sends it to `[[...slug]]/page.tsx` |
-| 2 | Catch-all fetches the full pages list from the CMS |
-| 3 | URL is matched to a CMS page (exact) or its parent (detail) |
-| 4 | Matched page data is passed to the right page component via a registry |
-| 5 | Page component fetches its own entity data (services, blogs, events, etc.) |
-| 6 | `page.sections` is passed to `RenderSections`; data-driven sections fetch their own data |
-| 7 | Rich-text HTML fields are sanitized (DOMPurify) before rendering |
-| 8 | Root layout independently fetches header, footer, and site config |
+| Step | What happens                                                                             |
+| ---- | ---------------------------------------------------------------------------------------- |
+| 1    | Browser hits any URL → Next.js sends it to `[[...slug]]/page.tsx`                        |
+| 2    | Catch-all calls `fetchPageByUrl` for the current URL path                                |
+| 3    | URL is matched to a CMS page (exact) or its parent (detail)                              |
+| 4    | Matched page data is passed to the right page component via a registry                   |
+| 5    | Page component fetches its own entity data (services, blogs, events, etc.)               |
+| 6    | `page.sections` is passed to `RenderSections`; data-driven sections fetch their own data |
+| 7    | Rich-text HTML fields are sanitized (DOMPurify) before rendering                         |
+| 8    | Root layout independently fetches header, footer, and site config                        |
