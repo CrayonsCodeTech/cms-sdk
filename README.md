@@ -28,6 +28,8 @@ Content updates and management are handled through the CMS dashboard:
 You can install the SDK directly from private GitHub repository. Ensure you have access before proceeding.
 
 ```bash
+npm install @crayons/cms-sdk
+# or
 npm install git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git
 # or
 pnpm add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git --allow-build=@crayons/cms-sdk
