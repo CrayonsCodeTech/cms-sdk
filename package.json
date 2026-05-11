@@ -1,17 +1,24 @@
 {
-  "name": "@crayons/cms-sdk",
-  "version": "0.5.0",
+  "name": "@crayonscodetech/cms-sdk",
+  "version": "1.0.1",
   "description": "CMS SDK for fetching data and shared types",
-  "type": "module",
-  "main": "dist/index.cjs",
-  "module": "dist/index.mjs",
-  "types": "dist/index.d.cts",
-  "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
-    "prepare": "pnpm build",
-    "lint": "eslint src/**/*.ts"
+  "keywords": [
+    "cms",
+    "sdk",
+    "nextjs",
+    "fetch"
+  ],
+  "homepage": "https://github.com/CrayonsCodeTech/cms-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/CrayonsCodeTech/cms-sdk/issues"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CrayonsCodeTech/cms-sdk.git"
+  },
+  "license": "MIT",
+  "author": "Crayons",
+  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.cts",
@@ -19,17 +26,20 @@
       "require": "./dist/index.cjs"
     }
   },
+  "main": "dist/index.cjs",
+  "types": "dist/index.d.cts",
   "files": [
     "dist"
   ],
-  "keywords": [
-    "cms",
-    "sdk",
-    "nextjs",
-    "fetch"
-  ],
-  "author": "Crayons",
-  "license": "ISC",
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "prepare": "pnpm build",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "lucide-react": "^1.14.0"
+  },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "tsdown": "latest",
@@ -41,12 +51,10 @@
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0"
   },
-  "dependencies": {
-    "lucide-react": "^1.14.0"
-  },
   "peerDependenciesMeta": {
     "next": {
       "optional": true
     }
-  }
+  },
+  "module": "dist/index.mjs"
 }
