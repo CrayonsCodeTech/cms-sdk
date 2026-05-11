@@ -32,7 +32,7 @@
   "devDependencies": {
     "@types/react": "^19.2.14",
     "tsup": "^8.5.1",
-    "typescript": "^7.0.0"
+    "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "lucide-react": "^1.14.0",
