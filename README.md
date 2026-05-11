@@ -1,5 +1,4 @@
-# @crayons/cms-sdk
-
+# @crayonscodetech/cms-sdk
 A robust, type-safe SDK/Package for fetching data from the Crayons CMS. Designed for Next.js.
 
 ## Technical Overview
