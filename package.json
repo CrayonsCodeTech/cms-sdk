@@ -2,20 +2,21 @@
   "name": "@crayons/cms-sdk",
   "version": "0.5.0",
   "description": "CMS SDK for fetching data and shared types",
-  "main": "dist/index.js",
+  "type": "module",
+  "main": "dist/index.cjs",
   "module": "dist/index.mjs",
-  "types": "dist/index.d.ts",
+  "types": "dist/index.d.cts",
   "scripts": {
-    "build": "tsup src/index.ts --format cjs,esm --dts",
-    "dev": "tsup src/index.ts --format cjs,esm --watch --dts",
+    "build": "tsdown",
+    "dev": "tsdown --watch",
     "prepare": "pnpm build",
     "lint": "eslint src/**/*.ts"
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/index.d.cts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
@@ -31,7 +32,7 @@
   "license": "ISC",
   "devDependencies": {
     "@types/react": "^19.2.14",
-    "tsup": "^8.5.1",
+    "tsdown": "latest",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
