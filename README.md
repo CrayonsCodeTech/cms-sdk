@@ -2647,6 +2647,106 @@ export interface FetchOptions extends RequestInit {
 - `fetchCollectionDetailById(siteId, id, params?, options?)`: Same as `fetchCollectionDetail`, but keyed by collection ID for CMS-driven product sections.
 - `placeOrder(siteId, payload, options?)`: Places an order. Call from a server API route — never client-side.
 
+---
+
+## Sitemap
+
+The SDK exposes four lightweight sitemap endpoints that return only the fields needed to build an XML sitemap (slug/URL, image, title/name). Each endpoint filters to published content only and defaults to up to **5,000 items per request** — enough for most sites without needing to paginate.
+
+> **These endpoints must only be called once per day.** Place them inside Next.js's `app/sitemap.ts` file and export `revalidate = 86400`. Never call them at request time.
+
+### Methods
+
+| Method                                                   | Returns                                        |
+| -------------------------------------------------------- | ---------------------------------------------- |
+| `fetchSitemapBlogs(siteId, params?, options?)`           | `PaginatedResponse<SitemapBlogItem>`           |
+| `fetchSitemapPages(siteId, params?, options?)`           | `PaginatedResponse<SitemapPageItem>`           |
+| `fetchSitemapProducts(siteId, params?, options?)`        | `PaginatedResponse<SitemapProductItem>`        |
+| `fetchSitemapCollections(siteId, params?, options?)`     | `PaginatedResponse<SitemapCollectionItem>`     |
+
+All four accept optional `{ page?: number; limit?: number }` params.
+
+### Types
+
+```typescript
+interface SitemapBlogItem {
+  slug: string;
+  image: string | null;
+  title: string;
+}
+
+interface SitemapPageItem {
+  url: string;   // e.g. "/about", "/services"
+  title: string;
+}
+
+interface SitemapProductItem {
+  slug: string;
+  image: string | null;
+  name: string;
+}
+
+interface SitemapCollectionItem {
+  slug: string;
+  image: string | null;
+  name: string;
+}
+```
+
+### Next.js `app/sitemap.ts` example
+
+Place this file at `app/sitemap.ts`. Next.js calls it at build time and regenerates it every 24 hours via ISR.
+
+```typescript
+import type { MetadataRoute } from "next";
+import { createCmsClient } from "@crayonscodetech/cms-sdk";
+
+// Regenerate the sitemap at most once per day — do NOT remove this export.
+export const revalidate = 86400;
+
+const cms = createCmsClient({ baseUrl: process.env.NEXT_PUBLIC_CMS_API_URL! });
+const SITE_ID = process.env.NEXT_PUBLIC_SITE_ID!;
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL!; // e.g. "https://example.com"
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const [blogs, pages, products, collections] = await Promise.all([
+    cms.fetchSitemapBlogs(SITE_ID),
+    cms.fetchSitemapPages(SITE_ID),
+    cms.fetchSitemapProducts(SITE_ID),
+    cms.fetchSitemapCollections(SITE_ID),
+  ]);
+
+  const blogEntries: MetadataRoute.Sitemap = blogs.data.map((b) => ({
+    url: `${BASE_URL}/blog/${b.slug}`,
+    images: b.image ? [b.image] : undefined,
+  }));
+
+  const pageEntries: MetadataRoute.Sitemap = pages.data.map((p) => ({
+    url: `${BASE_URL}${p.url}`,
+  }));
+
+  const productEntries: MetadataRoute.Sitemap = products.data.map((p) => ({
+    url: `${BASE_URL}/products/${p.slug}`,
+    images: p.image ? [p.image] : undefined,
+  }));
+
+  const collectionEntries: MetadataRoute.Sitemap = collections.data.map((c) => ({
+    url: `${BASE_URL}/collections/${c.slug}`,
+    images: c.image ? [c.image] : undefined,
+  }));
+
+  return [
+    { url: BASE_URL }, // homepage
+    ...pageEntries,
+    ...blogEntries,
+    ...productEntries,
+    ...collectionEntries,
+  ];
+}
+```
+
+> **Note:** If your site has more than 5,000 entries for any content type, use the `limit` param together with Next.js's [`generateSitemaps`](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/sitemap#generating-multiple-sitemaps) to split the output across multiple sitemap files.
+
 ## Type System
 
 All types are exported from the main package and are located in the `src/types/` directory.

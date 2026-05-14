@@ -23,6 +23,12 @@ import type { ProductBrand } from "../types/product-brand";
 import type { Collection, CollectionDetail } from "../types/collection";
 import type { Order, PlaceOrderPayload } from "../types/order";
 import type { StoreSettings } from "../types/store-setting";
+import type {
+  SitemapBlogItem,
+  SitemapPageItem,
+  SitemapProductItem,
+  SitemapCollectionItem,
+} from "../types/sitemap";
 
 export interface FetchOptions extends RequestInit {
   revalidate?: number;
@@ -849,6 +855,74 @@ export function createCmsClient(config: CmsClientConfig) {
     });
   }
 
+  // ============================================================================
+  // Sitemap — public endpoints for XML sitemap generation (fetch once per day)
+  // ============================================================================
+
+  function fetchSitemapBlogs(
+    siteId: string,
+    params: { page?: number; limit?: number } = {},
+    options?: FetchOptions,
+  ): Promise<PaginatedResponse<SitemapBlogItem>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<SitemapBlogItem>(
+      `/api/public/cms/${siteId}/sitemap/blogs/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.STATIC,
+        tags: ["sitemap", "sitemap-blogs"],
+        ...options,
+      },
+    );
+  }
+
+  function fetchSitemapPages(
+    siteId: string,
+    params: { page?: number; limit?: number } = {},
+    options?: FetchOptions,
+  ): Promise<PaginatedResponse<SitemapPageItem>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<SitemapPageItem>(
+      `/api/public/cms/${siteId}/sitemap/pages/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.STATIC,
+        tags: ["sitemap", "sitemap-pages"],
+        ...options,
+      },
+    );
+  }
+
+  function fetchSitemapProducts(
+    siteId: string,
+    params: { page?: number; limit?: number } = {},
+    options?: FetchOptions,
+  ): Promise<PaginatedResponse<SitemapProductItem>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<SitemapProductItem>(
+      `/api/public/store/${siteId}/sitemap/products/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.STATIC,
+        tags: ["sitemap", "sitemap-products"],
+        ...options,
+      },
+    );
+  }
+
+  function fetchSitemapCollections(
+    siteId: string,
+    params: { page?: number; limit?: number } = {},
+    options?: FetchOptions,
+  ): Promise<PaginatedResponse<SitemapCollectionItem>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<SitemapCollectionItem>(
+      `/api/public/store/${siteId}/sitemap/collections/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.STATIC,
+        tags: ["sitemap", "sitemap-collections"],
+        ...options,
+      },
+    );
+  }
+
   return {
     // Header, Footer, Site Config
     fetchHeader,
@@ -902,6 +976,11 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchCollectionDetail,
     fetchCollectionDetailById,
     placeOrder,
+    // Sitemap
+    fetchSitemapBlogs,
+    fetchSitemapPages,
+    fetchSitemapProducts,
+    fetchSitemapCollections,
     // Generic fetch utilities
     fetch: cmsFetch,
     fetchPaginated: cmsFetchPaginated,

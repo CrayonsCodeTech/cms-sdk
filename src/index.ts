@@ -32,6 +32,9 @@ export * from "./types/company-info";
 export * from "./types/site";
 export * from "./types/contact";
 
+// Types - Sitemap
+export * from "./types/sitemap";
+
 // Types - Store entities
 export * from "./types/product";
 export * from "./types/product-category";
