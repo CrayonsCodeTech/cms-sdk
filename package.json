@@ -6,7 +6,7 @@
     "cms",
     "sdk",
     "nextjs",
-    "fetch"
+    "crayons"
   ],
   "homepage": "https://github.com/CrayonsCodeTech/cms-sdk#readme",
   "bugs": {
