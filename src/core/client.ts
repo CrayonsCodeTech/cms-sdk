@@ -802,6 +802,8 @@ export function createCmsClient(config: CmsClientConfig) {
       page?: number;
       limit?: number;
       category_id?: string;
+      sort?: "name_asc" | "name_desc";
+      availability?: "in_stock" | "out_of_stock";
     } = {},
     options?: FetchOptions,
   ): Promise<CollectionDetail | null> {
@@ -825,6 +827,8 @@ export function createCmsClient(config: CmsClientConfig) {
       page?: number;
       limit?: number;
       category_id?: string;
+      sort?: "name_asc" | "name_desc";
+      availability?: "in_stock" | "out_of_stock";
     } = {},
     options?: FetchOptions,
   ): Promise<CollectionDetail | null> {
