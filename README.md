@@ -622,10 +622,10 @@ Several section types only carry **display text** (headings, subtitles) in `sect
 | About            | `"about"`            | `AboutSection`           | `page.sections` + `about-us`  | `fetchAboutUs(siteId)` for profile/vision/mission/stats                                     |
 | Multi Value      | `"multi-value"`      | `MultiValueSection`      | `page.sections` (from `page`) | None — content is inline                                                                    |
 | Services         | `"service"`          | `ServicesSection`        | `services`                    | `fetchServices(siteId)`                                                                     |
-| Testimonials     | `"testimonial"`      | `TestimonialsSection`    | `testimonials`                | `fetchTestimonials(siteId, { type })` — use `content.type` to filter                        |
-| Team             | `"team"`             | `TeamSection`            | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, content.team_category_id)` |
-| FAQ              | `"faq"`              | `FaqSection`             | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`             |
-| Clients / Brands | `"clients"`          | `ClientsSection`         | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`    |
+| Testimonials     | `"testimonial"`      | `TestimonialsSection`    | `testimonials`                | `fetchTestimonials(siteId, { type })` — use `content.type` to filter                                                      |
+| Team             | `"team"`             | `TeamSection`            | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, { categoryId: content.team_category_id })`               |
+| FAQ              | `"faq"`              | `FaqSection`             | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`                                           |
+| Clients / Brands | `"clients"`          | `ClientsSection`         | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`                                  |
 | Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
 | Events           | `"event"`            | `GenericSection`         | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
 | Blog             | `"blog"`             | `GenericSection`         | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
@@ -654,7 +654,7 @@ interface Props {
 
 export async function TestimonialSection({ content }: Props) {
   // content.type is "testimonial" | "review" — use it to filter
-  const testimonials = await cms.fetchTestimonials(SITE_ID, {
+  const { data: testimonials } = await cms.fetchTestimonials(SITE_ID, {
     type: content.type as "testimonial" | "review",
   });
 
@@ -685,7 +685,7 @@ import { cms, SITE_ID } from "@/lib/cms";
 import type { TeamSection } from "@crayons/cms-sdk";
 
 export async function TeamSection({ content }: { content: TeamSection }) {
-  const members = await cms.fetchTeamMembers(SITE_ID);
+  const { data: members } = await cms.fetchTeamMembers(SITE_ID);
 
   return (
     <section>
@@ -733,15 +733,15 @@ import type { FaqSection } from "@crayons/cms-sdk";
 
 export async function FaqSection({ content }: { content: FaqSection }) {
   // Fetch the specific group if a group_id is set, otherwise fetch all
-  const groups = content.group_id
-    ? await cms.fetchFaqGroups(SITE_ID)
-    : await cms.fetchFaqGroups(SITE_ID);
+  const { data: groups } = await cms.fetchFaqGroups(SITE_ID);
 
   const targetGroup = content.group_id
     ? groups.find((g) => g.id === content.group_id)
     : null;
 
-  const faqs = targetGroup ? targetGroup.faqs : await cms.fetchFaqs(SITE_ID);
+  const faqs = targetGroup
+    ? targetGroup.faqs
+    : (await cms.fetchFaqs(SITE_ID)).data;
 
   return (
     <section>
@@ -1053,7 +1053,7 @@ const { data: results } = await cms.fetchBlogs(SITE_ID, {
 });
 
 // Category filtering — fetch categories then filter client-side, or show per-category pages
-const categories = await cms.fetchCategories(SITE_ID);
+const { data: categories } = await cms.fetchCategories(SITE_ID);
 
 // Blogs don't have a direct category_id param — fetch categories for display,
 // then use them as navigation labels linking to filtered URLs
@@ -2592,19 +2592,19 @@ export interface FetchOptions extends RequestInit {
 - `fetchBlogs(siteId, params?, options?)`: Returns paginated blogs. Params: `{ page, limit, search }`.
 - `fetchBlogBySlug(siteId, slug, options?)`: Returns a single blog post by slug.
 - `fetchBlogById(siteId, idOrSlug, options?)`: Backwards-compatible alias (internally resolves via slug route).
-- `fetchCategories(siteId, options?)`: Returns all blog categories.
+- `fetchCategories(siteId, params?, options?)`: Returns paginated team categories. Params: `{ page, limit }`. Default limit: 20.
 
 ### Other Entities
 
 - `fetchServices(siteId, options?)`: Returns all services.
 - `fetchServiceById(siteId, id, options?)`: Returns a single service by ID.
-- `fetchTeamMembers(siteId, options?)`: Returns all team members.
-- `fetchTeamMembersByCategory(siteId, categoryId, options?)`: Returns team members filtered by category.
-- `fetchTestimonials(siteId, params?, options?)`: Returns testimonials. Params: `{ type: 'testimonial' | 'review' }`.
-- `fetchEvents(siteId, params?, options?)`: Returns paginated events.
+- `fetchTeamMembers(siteId, params?, options?)`: Returns paginated team members. Params: `{ page, limit }`. Default limit: 20.
+- `fetchTeamMembersByCategory(siteId, params, options?)`: Returns paginated team members filtered by category. Params: `{ categoryId, page?, limit? }`. Default limit: 20. **Note:** `categoryId` is now inside the params object.
+- `fetchTestimonials(siteId, params?, options?)`: Returns paginated testimonials. Params: `{ type?, page?, limit? }`. Default limit: 20.
+- `fetchEvents(siteId, params?, options?)`: Returns paginated events. Params: `{ page, limit, search }`.
 - `fetchEventById(siteId, id, options?)`: Returns a single event by ID.
-- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums.
-- `fetchAlbumItems(siteId, params, options?)`: Returns items for an album. Params: `{ album, album_id }`.
+- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search }`.
+- `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. Default limit: 20.
 
 ### Redirects
 
@@ -2614,8 +2614,10 @@ export interface FetchOptions extends RequestInit {
 
 ### FAQ & Help
 
-- `fetchFaqGroups(siteId, options?)`: Returns FAQ groups with their nested FAQs.
-- `fetchFaqs(siteId, params?, options?)`: Returns flat list of FAQs. Params: `{ group_id }`.
+- `fetchBrandGroups(siteId, params?, options?)`: Returns paginated published brand groups. Params: `{ page?, limit? }`. Default limit: 20.
+- `fetchBrands(siteId, params, options?)`: Returns paginated brands, optionally filtered by group. Params: `{ group?, group_id?, page?, limit? }`. Default limit: 20.
+- `fetchFaqGroups(siteId, params?, options?)`: Returns paginated FAQ groups with their nested FAQs. Params: `{ page?, limit? }`. Default limit: 20.
+- `fetchFaqs(siteId, params?, options?)`: Returns paginated flat list of FAQs. Params: `{ group_id?, page?, limit? }`. Default limit: 20.
 
 ### Forms & Submissions
 

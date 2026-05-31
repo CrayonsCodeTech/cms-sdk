@@ -1,5 +1,5 @@
 import { CACHE, PAGINATION } from "../constants";
-import type { PaginatedResponse, PaginationMeta } from "../types/pagination";
+import type { PaginatedResponse } from "../types/pagination";
 import type { Header } from "../types/header";
 import type { Footer } from "../types/footer";
 import type { SiteConfig } from "../types/site-config";
@@ -195,6 +195,10 @@ export function createCmsClient(config: CmsClientConfig) {
     return query.toString();
   }
 
+  // Default page size for list endpoints (categories, team, brands, testimonials,
+  // faq-groups, faqs, album-items). Matches the backend's getPaginationParamsWithoutLimit(c, 20).
+  const LIST_DEFAULT_LIMIT = PAGINATION.LIST_DEFAULT_LIMIT;
+
   // ============================================================================
   // Header, Footer, Site Config
   // ============================================================================
@@ -298,17 +302,18 @@ export function createCmsClient(config: CmsClientConfig) {
 
   async function fetchServices(
     siteId: string,
+    params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<Service[]> {
-    const result = await cmsFetch<Service[]>(
-      `/api/public/cms/${siteId}/services/`,
+  ): Promise<PaginatedResponse<Service>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<Service>(
+      `/api/public/cms/${siteId}/services/${query ? `?${query}` : ""}`,
       {
         revalidate: CACHE.SHORT,
         tags: ["services"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
   function fetchServiceById(
@@ -365,54 +370,60 @@ export function createCmsClient(config: CmsClientConfig) {
   // Categories
   // ============================================================================
 
-  async function fetchCategories(
+  function fetchCategories(
     siteId: string,
+    params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<Category[]> {
-    const result = await cmsFetch<Category[]>(
-      `/api/public/cms/${siteId}/categories/`,
+  ): Promise<PaginatedResponse<Category>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<Category>(
+      `/api/public/cms/${siteId}/categories/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
         tags: ["categories"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
   // ============================================================================
   // Team Members
   // ============================================================================
 
-  async function fetchTeamMembers(
+  function fetchTeamMembers(
     siteId: string,
+    params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<TeamMember[]> {
-    const result = await cmsFetch<TeamMember[]>(
-      `/api/public/cms/${siteId}/team-members/`,
+  ): Promise<PaginatedResponse<TeamMember>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<TeamMember>(
+      `/api/public/cms/${siteId}/team-members/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
         tags: ["team"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
-  async function fetchTeamMembersByCategory(
+  function fetchTeamMembersByCategory(
     siteId: string,
-    categoryId: string,
+    params: { categoryId: string; page?: number; limit?: number },
     options?: FetchOptions,
-  ): Promise<TeamMember[]> {
-    const result = await cmsFetch<TeamMember[]>(
-      `/api/public/cms/${siteId}/team-members/?category_id=${categoryId}`,
+  ): Promise<PaginatedResponse<TeamMember>> {
+    const query = buildQueryString({
+      category_id: params.categoryId,
+      page: params.page,
+      limit: params.limit,
+    });
+    return cmsFetchPaginated<TeamMember>(
+      `/api/public/cms/${siteId}/team-members/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
-        tags: ["team", `team-category-${categoryId}`],
+        tags: ["team", `team-category-${params.categoryId}`],
         ...options,
       },
     );
-    return result ?? [];
   }
 
   // ============================================================================
@@ -435,13 +446,13 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
-  async function fetchAlbumItems(
+  function fetchAlbumItems(
     siteId: string,
-    params: { album?: string; album_id?: string },
+    params: { album?: string; album_id?: string; page?: number; limit?: number },
     options?: FetchOptions,
-  ): Promise<AlbumItem[]> {
+  ): Promise<PaginatedResponse<AlbumItem>> {
     const query = buildQueryString(params);
-    const result = await cmsFetch<AlbumItem[]>(
+    return cmsFetchPaginated<AlbumItem>(
       `/api/public/cms/${siteId}/albums/album-items/?${query}`,
       {
         revalidate: CACHE.SHORT,
@@ -449,35 +460,35 @@ export function createCmsClient(config: CmsClientConfig) {
         ...options,
       },
     );
-    return result ?? [];
   }
 
   // ============================================================================
   // Brands
   // ============================================================================
 
-  async function fetchBrandGroups(
+  function fetchBrandGroups(
     siteId: string,
+    params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<BrandGroup[]> {
-    const result = await cmsFetch<BrandGroup[]>(
-      `/api/public/cms/${siteId}/brand-groups/`,
+  ): Promise<PaginatedResponse<BrandGroup>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<BrandGroup>(
+      `/api/public/cms/${siteId}/brand-groups/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
         tags: ["brand-groups"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
-  async function fetchBrands(
+  function fetchBrands(
     siteId: string,
-    params: { group?: string; group_id?: string },
+    params: { group?: string; group_id?: string; page?: number; limit?: number },
     options?: FetchOptions,
-  ): Promise<Brand[]> {
+  ): Promise<PaginatedResponse<Brand>> {
     const query = buildQueryString(params);
-    const result = await cmsFetch<Brand[]>(
+    return cmsFetchPaginated<Brand>(
       `/api/public/cms/${siteId}/brand-groups/brands/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
@@ -485,20 +496,23 @@ export function createCmsClient(config: CmsClientConfig) {
         ...options,
       },
     );
-    return result ?? [];
   }
 
   // ============================================================================
   // Testimonials
   // ============================================================================
 
-  async function fetchTestimonials(
+  function fetchTestimonials(
     siteId: string,
-    params?: { type?: "testimonial" | "review" | string },
+    params?: { type?: "testimonial" | "review" | string; page?: number; limit?: number },
     options?: FetchOptions,
-  ): Promise<Testimonial[]> {
-    const query = params?.type ? buildQueryString({ type: params.type }) : "";
-    const result = await cmsFetch<Testimonial[]>(
+  ): Promise<PaginatedResponse<Testimonial>> {
+    const query = buildQueryString({
+      type: params?.type,
+      page: params?.page,
+      limit: params?.limit,
+    });
+    return cmsFetchPaginated<Testimonial>(
       `/api/public/cms/${siteId}/testimonials/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
@@ -506,7 +520,6 @@ export function createCmsClient(config: CmsClientConfig) {
         ...options,
       },
     );
-    return result ?? [];
   }
 
   // ============================================================================
@@ -545,19 +558,20 @@ export function createCmsClient(config: CmsClientConfig) {
   // FAQ Groups
   // ============================================================================
 
-  async function fetchFaqGroups(
+  function fetchFaqGroups(
     siteId: string,
+    params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<FaqGroup[]> {
-    const result = await cmsFetch<FaqGroup[]>(
-      `/api/public/cms/${siteId}/faq-groups/`,
+  ): Promise<PaginatedResponse<FaqGroup>> {
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<FaqGroup>(
+      `/api/public/cms/${siteId}/faq-groups/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
         tags: ["faq-groups"],
         ...options,
       },
     );
-    return result ?? [];
   }
 
   async function submitContactForm(
@@ -576,15 +590,17 @@ export function createCmsClient(config: CmsClientConfig) {
     });
   }
 
-  async function fetchFaqs(
+  function fetchFaqs(
     siteId: string,
-    params?: { group_id?: string },
+    params?: { group_id?: string; page?: number; limit?: number },
     options?: FetchOptions,
-  ): Promise<Faq[]> {
-    const query = params?.group_id
-      ? buildQueryString({ group_id: params.group_id })
-      : "";
-    const result = await cmsFetch<Faq[]>(
+  ): Promise<PaginatedResponse<Faq>> {
+    const query = buildQueryString({
+      group_id: params?.group_id,
+      page: params?.page,
+      limit: params?.limit,
+    });
+    return cmsFetchPaginated<Faq>(
       `/api/public/cms/${siteId}/faqs/?${query}`,
       {
         revalidate: CACHE.MEDIUM,
@@ -592,7 +608,6 @@ export function createCmsClient(config: CmsClientConfig) {
         ...options,
       },
     );
-    return result ?? [];
   }
 
   // ============================================================================
@@ -761,9 +776,9 @@ export function createCmsClient(config: CmsClientConfig) {
     tag: string,
     params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<{ products: Array<{ item: unknown; product: Product }>; pagination: PaginationMeta } | null> {
+  ): Promise<PaginatedResponse<{ item: unknown; product: Product }> | null> {
     const query = buildQueryString({ tag, ...params });
-    return cmsFetch<{ products: Array<{ item: unknown; product: Product }>; pagination: PaginationMeta } | null>(
+    return cmsFetch<PaginatedResponse<{ item: unknown; product: Product }>>(
       `/api/public/store/${siteId}/products/by-tag/${query ? `?${query}` : ""}`,
       {
         revalidate: CACHE.SHORT,
@@ -928,6 +943,8 @@ export function createCmsClient(config: CmsClientConfig) {
   }
 
   return {
+    // Default page size for list endpoints (categories, team, brands, testimonials, etc.)
+    LIST_DEFAULT_LIMIT,
     // Header, Footer, Site Config
     fetchHeader,
     fetchFooter,

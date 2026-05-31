@@ -3,6 +3,7 @@ export * from "./pageTypes";
 export const PAGINATION = {
   DEFAULT_PAGE: 1,
   DEFAULT_LIMIT: 10,
+  LIST_DEFAULT_LIMIT: 20,
   BLOGS_PER_PAGE: 9,
   EVENTS_PER_PAGE: 9,
   ALBUMS_PER_PAGE: 9,

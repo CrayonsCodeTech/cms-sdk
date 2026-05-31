@@ -1,6 +1,6 @@
 {
   "name": "@crayonscodetech/cms-sdk",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CMS SDK for fetching data and shared types",
   "keywords": [
     "cms",
