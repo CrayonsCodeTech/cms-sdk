@@ -1,3 +1,5 @@
+import type { SiteTemplate } from "../constants/siteTemplates";
+
 export interface Branding {
   logo_primary?: string;
   logo_dark?: string;
@@ -43,6 +45,7 @@ export interface SiteConfig {
   site_id: number;
   site_name: string;
   site_description: string;
+  site_template: SiteTemplate;
   logo: Branding;
   contact: ContactConfig;
 }

@@ -1,4 +1,5 @@
 export * from "./pageTypes";
+export * from "./siteTemplates";
 
 export const PAGINATION = {
   DEFAULT_PAGE: 1,
