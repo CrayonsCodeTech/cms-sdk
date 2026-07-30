@@ -3,6 +3,7 @@ export const siteTemplates = [
   "classic_corporate",
   "bold_dark",
   "editorial_bold",
+  "modern_classic",
 ] as const;
 
 export type SiteTemplate = (typeof siteTemplates)[number];
