@@ -1,4 +1,9 @@
-export const siteTemplates = ["modern_clean", "classic_corporate"] as const;
+export const siteTemplates = [
+  "modern_clean",
+  "classic_corporate",
+  "bold_dark",
+  "editorial_bold",
+] as const;
 
 export type SiteTemplate = (typeof siteTemplates)[number];
 
