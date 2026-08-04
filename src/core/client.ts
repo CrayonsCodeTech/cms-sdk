@@ -316,14 +316,14 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
-  function fetchServiceById(
+  function fetchServiceBySlug(
     siteId: string,
-    id: string,
+    slug: string,
     options?: FetchOptions,
   ): Promise<Service | null> {
-    return cmsFetch<Service>(`/api/public/cms/${siteId}/services/${id}/`, {
+    return cmsFetch<Service>(`/api/public/cms/${siteId}/services/${slug}`, {
       revalidate: CACHE.SHORT,
-      tags: ["services", `service-${id}`],
+      tags: ["services", `service-${slug}`],
       ...options,
     });
   }
@@ -956,7 +956,7 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchAboutUs,
     // Services
     fetchServices,
-    fetchServiceById,
+    fetchServiceBySlug,
     // Blogs
     fetchBlogs,
     fetchBlogBySlug,
