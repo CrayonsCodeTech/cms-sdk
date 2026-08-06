@@ -7,6 +7,8 @@ export interface Blog {
   title: string;
   image_url?: string | null;
   image_alt?: string | null;
+  thumbnail_url?: string | null;
+  thumbnail_alt?: string | null;
   author: string;
   description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   excerpt?: string | null;
