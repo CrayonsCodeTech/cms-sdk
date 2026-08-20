@@ -3,7 +3,7 @@ import type { PaginatedResponse } from "../types/pagination";
 import type { Header } from "../types/header";
 import type { Footer } from "../types/footer";
 import type { SiteConfig } from "../types/site-config";
-import type { Page, PageListItem } from "../types/page";
+import type { Page, PageListItem } from "../types/cms-page";
 import type { AboutUsData } from "../types/about";
 import type { Service } from "../types/service";
 import type { Blog } from "../types/blog";

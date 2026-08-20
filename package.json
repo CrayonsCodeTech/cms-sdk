@@ -35,13 +35,14 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "prepare": "pnpm build",
-    "lint": "eslint src/**/*.ts"
+    "lint": "eslint src/**/*.ts",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
-    "lucide-react": "^1.14.0"
+    "lucide-react": "^1.32.0"
   },
   "devDependencies": {
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.18",
     "tsdown": "latest",
     "typescript": "^6.0.3"
   },

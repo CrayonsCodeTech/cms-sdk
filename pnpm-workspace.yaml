@@ -1,3 +1,17 @@
+# Supply-chain hardening (https://pnpm.io/supply-chain-security)
+# Wait 7 days (10080 minutes) before installing a newly published version, so
+# malware that gets caught and unpublished within hours never reaches us.
+minimumReleaseAge: 10080
+# Exempt: we intentionally track lucide-react's latest icon releases, which are
+# newer than the 7-day window. Revisit if we no longer need to be this current.
+minimumReleaseAgeExclude:
+  - lucide-react
+# Refuse a package whose trust evidence (trusted publisher -> provenance -> none)
+# is weaker than a previous release's.
+trustPolicy: no-downgrade
+# blockExoticSubdeps defaults to true in recent pnpm; never set it to false, which
+# would let transitive deps resolve from git:/file:/tarball URLs, bypassing the registry.
+
 allowBuilds:
   esbuild: true
   sharp: true

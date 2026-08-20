@@ -15,7 +15,7 @@ export * from "./types/api-response";
 export * from "./types/header";
 export * from "./types/footer";
 export * from "./types/site-config";
-export * from "./types/page";
+export * from "./types/cms-page";
 export * from "./types/about";
 export * from "./types/service";
 export * from "./types/blog";

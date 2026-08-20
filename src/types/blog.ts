@@ -1,4 +1,4 @@
-import type { Section } from "./page";
+import type { Section } from "./cms-page";
 
 export interface Blog {
   id: string;
