@@ -42,6 +42,8 @@ export interface Order {
   discount: number | null;
   notes: string | null;
   metadata: unknown;
+  /** False for inquiry-mode orders (site had price_visibility off) — stock was neither checked nor decremented. */
+  inventory_tracked: boolean;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
