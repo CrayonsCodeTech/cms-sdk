@@ -9,6 +9,8 @@ export interface Event {
   organizer_email?: string | null;
   start_date: string;
   end_date?: string | null;
+  application_start_date?: string | null;
+  application_end_date?: string | null;
   time?: string | null;
   location_name?: string | null;
   address?: string | null;
