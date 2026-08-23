@@ -3,7 +3,7 @@ export interface Category {
   site_id: string;
   name: string;
   slug: string;
-  description?: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
   order: number;
   extra?: Record<string, unknown>;
   created_at: string;
