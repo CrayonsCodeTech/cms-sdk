@@ -1,4 +1,5 @@
 import type { Section } from "./cms-page";
+import type { ProductSEO } from "./seo";
 
 export interface Service {
   id: string;
@@ -16,6 +17,7 @@ export interface Service {
   order: number;
   created_at: string;
   updated_at: string;
+  seo: ProductSEO | null;
   extra?: {
     sections: Section[];
   } | null;

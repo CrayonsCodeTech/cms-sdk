@@ -9,6 +9,8 @@ export interface Event {
   organizer_email?: string | null;
   start_date: string;
   end_date?: string | null;
+  application_start_date?: string | null;
+  application_end_date?: string | null;
   time?: string | null;
   location_name?: string | null;
   address?: string | null;
@@ -25,7 +27,7 @@ export interface Event {
   order: number;
   seo_title?: string | null;
   seo_description?: string | null;
-  seo_keywords?: any | null;
+  seo_keywords?: string[] | null;
   seo_image?: string | null;
   extra?: {
     sections: Section[];

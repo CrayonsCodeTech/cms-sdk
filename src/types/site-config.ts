@@ -39,10 +39,10 @@ export interface ContactConfig {
 }
 
 export interface SiteConfig {
-  id: number;
-  site_id: number;
+  id: string;
+  site_id: string;
   site_name: string;
-  site_description: string;
+  site_description: string | null;
   logo: Branding;
   contact: ContactConfig;
 }

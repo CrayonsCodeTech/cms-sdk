@@ -10,7 +10,8 @@ export interface Album {
   order: number;
   seo_title: string | null;
   seo_description: string | null;
-  seo_keywords: any | null;
+  seo_keywords: string[] | null;
+  seo_image: string | null;
   created_at: string;
   updated_at: string;
   items?: AlbumItem[];

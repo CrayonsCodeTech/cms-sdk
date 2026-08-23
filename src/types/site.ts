@@ -10,6 +10,10 @@ export interface Site {
   domain: string;
   is_published: boolean;
   is_store_enabled: boolean;
+  is_static_build_enabled: boolean;
+  is_redirect_enabled: boolean;
+  is_redirect_log_enabled: boolean;
+  deploy_hook_url: string | null;
   is_deleted: boolean;
   created_at: string;
   updated_at: string;

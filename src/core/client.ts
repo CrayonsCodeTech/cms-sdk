@@ -97,6 +97,11 @@ export function createCmsClient(config: CmsClientConfig) {
           return null;
         }
 
+        // 204 / empty body — nothing to parse
+        if (response.status === 204) {
+          return null;
+        }
+
         const result = await response.json();
         return result.data ?? result;
       } catch (error) {
