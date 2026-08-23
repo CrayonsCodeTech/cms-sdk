@@ -27,7 +27,7 @@ export interface Event {
   order: number;
   seo_title?: string | null;
   seo_description?: string | null;
-  seo_keywords?: any | null;
+  seo_keywords?: string[] | null;
   seo_image?: string | null;
   extra?: {
     sections: Section[];

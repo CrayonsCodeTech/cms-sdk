@@ -21,8 +21,8 @@ export interface Cta {
 }
 
 export interface Header {
-  id: number;
-  site_id: number;
+  id: string;
+  site_id: string;
   nav_links: NavLink[];
   ctas: Cta[];
   extra: Record<string, any>;

@@ -2174,6 +2174,8 @@ The CMS supports managed redirects (301/302/307/308) configured through the dash
 
 `resolveRedirect` supports both **manual** redirects (exact path match) and **pattern** redirects (e.g. `/blog/:slug → /news/:slug`). When a pattern matches, `ResolvedRedirect.params` contains the captured values and `destinationPath` already has them substituted in.
 
+> **Feature gate**: redirects and 404 logging are enabled **per site by a super admin** in the CMS dashboard (Super User → Sites). When a site has redirects disabled, those endpoints answer `403`, so `resolveRedirect` returns `null` and `fetchRedirects` returns `[]` — your middleware falls through to normal rendering. When 404 logging is disabled, `reportRedirect404` resolves to `null` and nothing is recorded. No code changes are needed on your side for either case.
+
 ---
 
 ### Option A — Middleware (Recommended)

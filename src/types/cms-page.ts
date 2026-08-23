@@ -222,6 +222,7 @@ export interface Page {
   status: "draft" | "published" | "archived";
   seo: SEO | null;
   settings: Record<string, any> | null;
+  extra?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
 }
