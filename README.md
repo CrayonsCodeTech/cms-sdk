@@ -785,7 +785,7 @@ Different page types follow different rendering strategies. Understanding these 
 | `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
 | `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })`                   |
 | `/team/[slug]`          | `team-members`                    | `fetchTeamMembers(siteId)` (slug lookup) or custom `fetch`                                      |
-| `/contact`              | `contact` (form submissions)      | `submitContactForm(siteId, payload)`                                                            |
+| `/contact`              | `contact` (form submissions)      | `fetchContactConfig(siteId)` + `submitContactForm(siteId, payload, attachments?)`               |
 
 ### Home Page — Section Rendering with Targeting
 
@@ -1264,22 +1264,42 @@ export default async function AlbumDetailPage({
 
 The contact page does **not** use `RenderSections`. It is a dedicated form page that submits directly to the CMS via `submitContactForm`. Do not render CMS sections here — just build your form UI and wire it to the SDK.
 
-```tsx
-// components/pages/ContactPage.tsx
-import { ContactForm } from "@/components/contact-form";
-import type { Page, SiteConfig } from "@crayons/cms-sdk";
+**If the site has Turnstile enabled, the form will not work without it.** Fetch the config
+on the server, render the widget with the site key, and forward the token through your own
+API route along with the rest of the payload.
 
-export default function ContactPage({
+```tsx
+// components/pages/ContactPage.tsx  (server component)
+import { ContactForm } from "@/components/contact-form";
+import { cms, SITE_ID } from "@/lib/cms";
+import type { Page, SiteConfig } from "@crayonscodetech/cms-sdk";
+
+export default async function ContactPage({
   page,
   site,
 }: {
   page: Page;
   site?: SiteConfig | null;
 }) {
+  // Public site key only — safe to hand to the client.
+  const contactConfig = await cms.fetchContactConfig(SITE_ID);
+  const turnstile = contactConfig?.turnstile;
+
+  // enabled with no site key = misconfigured; the widget cannot render and every
+  // submission would be rejected, so do not show a form that cannot succeed.
+  if (turnstile?.enabled && !turnstile.site_key) {
+    return (
+      <main>
+        <h1>Contact Us</h1>
+        <p>The contact form is temporarily unavailable.</p>
+      </main>
+    );
+  }
+
   return (
     <main>
       <h1>Contact Us</h1>
-      <ContactForm />
+      <ContactForm turnstileSiteKey={turnstile?.enabled ? turnstile.site_key : null} />
     </main>
   );
 }
@@ -1289,39 +1309,63 @@ export default function ContactPage({
 // components/contact-form.tsx  (client component — handles submission)
 "use client";
 
-import { useState } from "react";
-import type { ContactPayload } from "@crayons/cms-sdk";
+import { useRef, useState } from "react";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 
-export function ContactForm() {
+export function ContactForm({
+  turnstileSiteKey,
+}: {
+  turnstileSiteKey: string | null;
+}) {
   const [status, setStatus] = useState<
     "idle" | "sending" | "success" | "error"
   >("idle");
+  const [error, setError] = useState("");
+  const [token, setToken] = useState("");
+  const widget = useRef<TurnstileInstance>(null);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (turnstileSiteKey && !token) {
+      setError("Please complete the verification.");
+      return;
+    }
     setStatus("sending");
+    setError("");
 
     const form = e.currentTarget;
-    const payload: ContactPayload = {
+    const payload = {
       name: (form.elements.namedItem("name") as HTMLInputElement).value,
       email: (form.elements.namedItem("email") as HTMLInputElement).value,
       subject: (form.elements.namedItem("subject") as HTMLInputElement).value,
-      message: (form.elements.namedItem("message") as HTMLTextAreaElement)
-        .value,
+      message: (form.elements.namedItem("message") as HTMLTextAreaElement).value,
       type: "contact",
+      turnstile_token: token,
     };
 
     try {
-      // submitContactForm is called from a server action or API route to keep SITE_ID server-side
+      // Proxied through your own route so SITE_ID stays server-side.
       const res = await fetch("/api/contact", {
         method: "POST",
         body: JSON.stringify(payload),
         headers: { "Content-Type": "application/json" },
       });
 
-      setStatus(res.ok ? "success" : "error");
+      if (res.ok) {
+        setStatus("success");
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Something went wrong. Please try again.");
+        setStatus("error");
+      }
     } catch {
+      setError("Something went wrong. Please try again.");
       setStatus("error");
+    } finally {
+      // Turnstile tokens are single-use — always reset, success or failure, or
+      // the next submit replays a spent token and is rejected.
+      widget.current?.reset();
+      setToken("");
     }
   }
 
@@ -1331,11 +1375,14 @@ export function ContactForm() {
       <input name="email" type="email" placeholder="Email" />
       <input name="subject" placeholder="Subject" />
       <textarea name="message" placeholder="Message" required />
+      {turnstileSiteKey && (
+        <Turnstile ref={widget} siteKey={turnstileSiteKey} onSuccess={setToken} />
+      )}
       <button type="submit" disabled={status === "sending"}>
         {status === "sending" ? "Sending…" : "Send"}
       </button>
       {status === "success" && <p>Message sent!</p>}
-      {status === "error" && <p>Something went wrong. Please try again.</p>}
+      {status === "error" && <p>{error}</p>}
     </form>
   );
 }
@@ -1344,12 +1391,30 @@ export function ContactForm() {
 ```ts
 // app/api/contact/route.ts  (server — keeps SITE_ID out of the client bundle)
 import { cms, SITE_ID } from "@/lib/cms";
-import type { ContactPayload } from "@crayons/cms-sdk";
+import { CmsError, type ContactPayload } from "@crayonscodetech/cms-sdk";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const payload: ContactPayload = await req.json();
-  const result = await cms.submitContactForm(SITE_ID, payload);
-  return Response.json(result);
+
+  try {
+    const contact = await cms.submitContactForm(SITE_ID, payload);
+    return Response.json({ ok: true, contact });
+  } catch (e) {
+    // submitContactForm throws rather than returning null, so the visitor can be
+    // told what actually went wrong.
+    if (e instanceof CmsError) {
+      const message =
+        e.status === 403
+          ? "Verification failed. Please try again."
+          : e.status === 429
+            ? "Too many attempts. Please wait a moment."
+            : e.message;
+      return Response.json({ ok: false, error: message }, { status: e.status ?? 502 });
+    }
+    return Response.json({ ok: false, error: "Submission failed" }, { status: 502 });
+  }
 }
 ```
 
@@ -2623,15 +2688,44 @@ export interface FetchOptions extends RequestInit {
 
 ### Forms & Submissions
 
-- `submitContactForm(siteId, payload, options?)`: Submits a contact form.
+- `fetchContactConfig(siteId, options?)`: Public Turnstile settings for the contact form.
+  Call it before rendering the form.
+  - **Returns**: `{ turnstile: { enabled: boolean; site_key: string | null } }`
+  - When `enabled` is true you MUST render the Turnstile widget with `site_key` and pass the
+    resulting token as `turnstile_token`, or every submission is rejected with 403.
+  - `enabled: true` with a null `site_key` means the site is misconfigured — hide the form
+    rather than submitting into a guaranteed rejection.
+
+- `submitContactForm(siteId, payload, attachments?, options?)`: Submits a contact form.
   - **Payload Structure**:
     ```typescript
     {
-      name: string;      // Required
-      message: string;   // Required
-      email?: string;    // Optional
-      subject?: string;  // Optional
-      type?: string;     // Default: "contact"
+      name: string;              // Required
+      message: string;           // Required
+      email?: string;            // Optional
+      subject?: string;          // Optional
+      type?: string;             // Default: "contact"
+      turnstile_token?: string;  // Required when Turnstile is enabled
+    }
+    ```
+  - **Attachments** (optional): `File[]`. Sending them switches the request to multipart.
+    Caps, enforced server-side and pre-checked client-side: max 3 files, 4 MiB total, and a
+    MIME allowlist (PDF, PNG, JPEG, WebP, GIF, plain text, DOC, DOCX).
+  - **Throws `CmsError` instead of returning `null`.** Unlike the read methods, a form needs
+    to distinguish rejection kinds, so failures throw with `error.status`:
+    `403` captcha failed (reset the widget — tokens are single-use), `429` rate limited,
+    `400` validation, `503` Turnstile misconfigured server-side.
+  - Never retried: a resend would duplicate the submission.
+
+    ```typescript
+    import { CmsError } from "@crayonscodetech/cms-sdk";
+
+    try {
+      const contact = await cms.submitContactForm(SITE_ID, payload, files);
+    } catch (e) {
+      if (e instanceof CmsError && e.status === 403) {
+        // captcha rejected — reset the widget and let the visitor retry
+      }
     }
     ```
 

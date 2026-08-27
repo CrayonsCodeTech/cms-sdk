@@ -16,7 +16,16 @@ import type { Event } from "../types/event";
 import type { Faq } from "../types/faq";
 import type { FaqGroup } from "../types/faq-group";
 import type { Redirect, Redirect404Log, ResolvedRedirect } from "../types/redirect";
-import type { ContactPayload, Contact } from "../types/contact";
+import type {
+  ContactPayload,
+  Contact,
+  PublicContactConfig,
+} from "../types/contact";
+import {
+  MAX_CONTACT_ATTACHMENTS,
+  MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES,
+  CONTACT_ATTACHMENT_MIME_ALLOWLIST,
+} from "../types/contact";
 import type { Product, ProductListItem, ProductVariant } from "../types/product";
 import type { ProductCategory } from "../types/product-category";
 import type { ProductBrand } from "../types/product-brand";
@@ -579,20 +588,124 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
+  /**
+   * Public Turnstile settings for the site's contact form.
+   *
+   * Call this before rendering the form: when `turnstile.enabled` is true the
+   * widget must be rendered with `turnstile.site_key` and its token passed to
+   * `submitContactForm`, or every submission is rejected.
+   */
+  function fetchContactConfig(
+    siteId: string,
+    options?: FetchOptions,
+  ): Promise<PublicContactConfig | null> {
+    return cmsFetch<PublicContactConfig>(
+      `/api/public/cms/${siteId}/contact-config/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["contact-config"],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * Submit the contact form.
+   *
+   * Unlike the read methods, this THROWS `CmsError` on a rejection rather than
+   * returning null — a form needs to tell "captcha failed, reset the widget"
+   * (403) apart from "rate limited" (429) and a network blip, and a single
+   * `null` cannot carry that. `error.status` holds the HTTP status.
+   *
+   * Pass `attachments` to send files; the request then goes out as multipart
+   * instead of JSON. Caps are enforced server-side and pre-checked here.
+   */
   async function submitContactForm(
     siteId: string,
     payload: ContactPayload,
+    attachments?: File[],
     options?: FetchOptions,
-  ): Promise<Contact | null> {
-    return cmsFetch<Contact>(`/api/public/cms/${siteId}/contact/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      revalidate: CACHE.NO_CACHE, // Never cache form submissions
-      ...options,
-    });
+  ): Promise<Contact> {
+    const url = `${baseUrl}/api/public/cms/${siteId}/contact/`;
+
+    if (attachments?.length) {
+      if (attachments.length > MAX_CONTACT_ATTACHMENTS) {
+        throw new CmsError(
+          `At most ${MAX_CONTACT_ATTACHMENTS} attachments are allowed`,
+          400,
+          url,
+        );
+      }
+      const totalBytes = attachments.reduce((sum, f) => sum + f.size, 0);
+      if (totalBytes > MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES) {
+        throw new CmsError(
+          "Attachments exceed the 4 MiB total size limit",
+          400,
+          url,
+        );
+      }
+      for (const f of attachments) {
+        if (!CONTACT_ATTACHMENT_MIME_ALLOWLIST.includes(f.type)) {
+          throw new CmsError(
+            `Attachment type not allowed: ${f.type || "unknown"}`,
+            400,
+            url,
+          );
+        }
+      }
+    }
+
+    let body: BodyInit;
+    const headers: Record<string, string> = {};
+    if (attachments?.length) {
+      // multipart — the runtime must set Content-Type so the boundary is right,
+      // so no Content-Type header is set here.
+      const form = new FormData();
+      for (const [key, value] of Object.entries(payload)) {
+        if (value !== undefined && value !== null) form.append(key, String(value));
+      }
+      for (const file of attachments) form.append("attachments", file, file.name);
+      body = form;
+    } else {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(payload);
+    }
+
+    // No retries: the body may be a consumed stream, a resend would duplicate
+    // the submission, and the one retryable-looking status here (503, a
+    // misconfigured Turnstile) is a deployment fault that will not self-heal —
+    // retrying it just burns the 1-per-60s write budget.
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        method: "POST",
+        headers: { ...headers, ...(options?.headers as Record<string, string>) },
+        body,
+      });
+    } catch (error) {
+      throw new CmsError(
+        error instanceof Error ? error.message : "Network request failed",
+        undefined,
+        url,
+      );
+    }
+
+    if (!response.ok) {
+      // The API answers errors as { message }; fall back to the status text
+      // when the body is not JSON (a proxy error page, say).
+      let message = `Request failed with status ${response.status}`;
+      try {
+        const parsed = (await response.json()) as { message?: string };
+        if (parsed?.message) message = parsed.message;
+      } catch {
+        // keep the fallback
+      }
+      throw new CmsError(message, response.status, url);
+    }
+
+    const result = await response.json();
+    return (result.data ?? result) as Contact;
   }
 
   function fetchFaqs(
@@ -991,6 +1104,7 @@ export function createCmsClient(config: CmsClientConfig) {
     reportRedirect404,
     // Contact
     submitContactForm,
+    fetchContactConfig,
     // Store
     fetchStoreSettings,
     fetchProductCategories,
