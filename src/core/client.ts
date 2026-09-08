@@ -210,7 +210,9 @@ export function createCmsClient(config: CmsClientConfig) {
   }
 
   // Default page size for list endpoints (categories, team, brands, testimonials,
-  // faq-groups, faqs, album-items). Matches the backend's getPaginationParamsWithoutLimit(c, 20).
+  // faq-groups, faqs). Matches the backend's getPaginationParamsWithoutLimit(c, 20).
+  // Album-items is NOT one of these: it uses getPaginationParams(c, 100), so its
+  // server-side default is 10 and callers should pass an explicit `limit`.
   const LIST_DEFAULT_LIMIT = PAGINATION.LIST_DEFAULT_LIMIT;
 
   // ============================================================================
@@ -462,7 +464,18 @@ export function createCmsClient(config: CmsClientConfig) {
 
   function fetchAlbumItems(
     siteId: string,
-    params: { album?: string; album_id?: string; page?: number; limit?: number },
+    params: {
+      /** Album slug. */
+      album?: string;
+      /** Comma-separated list of album IDs (e.g., "id1,id2") */
+      album_id?: string;
+      page?: number;
+      /**
+       * Defaults to 10 server-side (max 100) — pass an explicit value to get a
+       * whole album, or several albums' worth for an album-group section.
+       */
+      limit?: number;
+    },
     options?: FetchOptions,
   ): Promise<PaginatedResponse<AlbumItem>> {
     const query = buildQueryString(params);

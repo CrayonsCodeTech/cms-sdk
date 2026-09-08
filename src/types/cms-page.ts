@@ -179,6 +179,13 @@ export interface CollectionGroupSection {
   collection_groups: string[];
 }
 
+export interface AlbumGroupSection {
+  section_heading?: string | null;
+  title: string;
+  subtitle?: string | null;
+  album_ids: string[];
+}
+
 export type Section =
   | { id: string; variant?: string | null; type: "hero"; content: HeroContent[] }
   | { id: string; variant?: string | null; type: "custom"; content: CustomContent }
@@ -202,6 +209,12 @@ export type Section =
       variant?: string | null;
       type: "collection-group";
       content: CollectionGroupSection;
+    }
+  | {
+      id: string;
+      variant?: string | null;
+      type: "album-group";
+      content: AlbumGroupSection;
     };
 
 export interface SEO {
