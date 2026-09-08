@@ -2749,11 +2749,38 @@ export interface FetchOptions extends RequestInit {
 
 ## Sitemap
 
-The SDK exposes four lightweight sitemap endpoints that return only the fields needed to build an XML sitemap (slug/URL, image, title/name). Each endpoint filters to published content only and defaults to up to **5,000 items per request** — enough for most sites without needing to paginate.
+The SDK exposes twelve lightweight sitemap endpoints that return only the fields needed to build an XML sitemap (slug/URL, image, title/name, plus `updatedAt` for `lastModified`). Each endpoint filters to published content only and defaults to up to **2,000 items per request** — enough for most sites without needing to paginate.
 
 > **These endpoints must only be called once per day.** Place them inside Next.js's `app/sitemap.ts` file and export `revalidate = 86400`. Never call them at request time.
 
 ### Methods
+
+Use `fetchSitemap(siteId, resource, params?, options?)` for any resource. The
+return type narrows automatically from the resource key:
+
+```typescript
+const pages = await cms.fetchSitemap(siteId, "pages");
+pages.data[0].url; // typed — pages are addressed by url
+const blogs = await cms.fetchSitemap(siteId, "blogs");
+blogs.data[0].slug; // typed — everything else is addressed by slug
+```
+
+| `resource`            | Namespace | Item type                     |
+| --------------------- | --------- | ----------------------------- |
+| `"blogs"`             | cms       | `SitemapBlogItem`             |
+| `"pages"`             | cms       | `SitemapPageItem`             |
+| `"services"`          | cms       | `SitemapServiceItem`          |
+| `"events"`            | cms       | `SitemapEventItem`            |
+| `"albums"`            | cms       | `SitemapAlbumItem`            |
+| `"team-members"`      | cms       | `SitemapTeamMemberItem`       |
+| `"team-categories"`   | cms       | `SitemapTeamCategoryItem`     |
+| `"brand-groups"`      | cms       | `SitemapBrandGroupItem`       |
+| `"products"`          | store     | `SitemapProductItem`          |
+| `"collections"`       | store     | `SitemapCollectionItem`       |
+| `"product-categories"`| store     | `SitemapProductCategoryItem`  |
+| `"product-brands"`    | store     | `SitemapProductBrandItem`     |
+
+These four remain available as named shortcuts:
 
 | Method                                                   | Returns                                        |
 | -------------------------------------------------------- | ---------------------------------------------- |
@@ -2762,32 +2789,42 @@ The SDK exposes four lightweight sitemap endpoints that return only the fields n
 | `fetchSitemapProducts(siteId, params?, options?)`        | `PaginatedResponse<SitemapProductItem>`        |
 | `fetchSitemapCollections(siteId, params?, options?)`     | `PaginatedResponse<SitemapCollectionItem>`     |
 
-All four accept optional `{ page?: number; limit?: number }` params.
+All accept optional `{ page?: number; limit?: number }` params.
+
+**Field naming:** most resources return `title`; `products` and `collections`
+return `name` instead (kept for backwards compatibility). `pages` is addressed
+by `url` rather than `slug`, and `pages`, `team-categories` and `brand-groups`
+have no `image` field.
 
 ### Types
 
 ```typescript
+// Every item type includes `updatedAt` — use it for `lastModified`.
 interface SitemapBlogItem {
   slug: string;
   image: string | null;
   title: string;
+  updatedAt: string;
 }
 
 interface SitemapPageItem {
   url: string;   // e.g. "/about", "/services"
   title: string;
+  updatedAt: string;
 }
 
 interface SitemapProductItem {
   slug: string;
   image: string | null;
   name: string;
+  updatedAt: string;
 }
 
 interface SitemapCollectionItem {
   slug: string;
   image: string | null;
   name: string;
+  updatedAt: string;
 }
 ```
 
@@ -2843,7 +2880,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 }
 ```
 
-> **Note:** If your site has more than 5,000 entries for any content type, use the `limit` param together with Next.js's [`generateSitemaps`](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/sitemap#generating-multiple-sitemaps) to split the output across multiple sitemap files.
+> **Note:** If your site has more than 2,000 entries for any content type, use the `limit` param together with Next.js's [`generateSitemaps`](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/sitemap#generating-multiple-sitemaps) to split the output across multiple sitemap files.
 
 ## Type System
 

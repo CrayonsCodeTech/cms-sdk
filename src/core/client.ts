@@ -37,6 +37,8 @@ import type {
   SitemapPageItem,
   SitemapProductItem,
   SitemapCollectionItem,
+  SitemapResource,
+  SitemapResourceMap,
 } from "../types/sitemap";
 
 export interface FetchOptions extends RequestInit {
@@ -1073,6 +1075,50 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
+  // Resource key -> backend path. Store resources are namespaced under
+  // /store/ and their keys are prefixed to avoid colliding with the CMS
+  // `categories` route, which is a different resource entirely.
+  const SITEMAP_ROUTES: Record<
+    SitemapResource,
+    { segment: string; store: boolean }
+  > = {
+    blogs: { segment: "blogs", store: false },
+    pages: { segment: "pages", store: false },
+    services: { segment: "services", store: false },
+    events: { segment: "events", store: false },
+    albums: { segment: "albums", store: false },
+    "team-members": { segment: "team-members", store: false },
+    "team-categories": { segment: "team-categories", store: false },
+    "brand-groups": { segment: "brand-groups", store: false },
+    products: { segment: "products", store: true },
+    collections: { segment: "collections", store: true },
+    "product-categories": { segment: "categories", store: true },
+    "product-brands": { segment: "brands", store: true },
+  };
+
+  /**
+   * Fetch any sitemap resource. Returns slug/url, title/name, image (where
+   * the content type has one) and `updatedAt` for `lastModified`.
+   */
+  function fetchSitemap<R extends SitemapResource>(
+    siteId: string,
+    resource: R,
+    params: { page?: number; limit?: number } = {},
+    options?: FetchOptions,
+  ): Promise<PaginatedResponse<SitemapResourceMap[R]>> {
+    const { segment, store } = SITEMAP_ROUTES[resource];
+    const namespace = store ? "store" : "cms";
+    const query = buildQueryString(params);
+    return cmsFetchPaginated<SitemapResourceMap[R]>(
+      `/api/public/${namespace}/${siteId}/sitemap/${segment}/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.STATIC,
+        tags: ["sitemap", `sitemap-${resource}`],
+        ...options,
+      },
+    );
+  }
+
   return {
     // Default page size for list endpoints (categories, team, brands, testimonials, etc.)
     LIST_DEFAULT_LIMIT,
@@ -1130,6 +1176,7 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchCollectionDetailById,
     placeOrder,
     // Sitemap
+    fetchSitemap,
     fetchSitemapBlogs,
     fetchSitemapPages,
     fetchSitemapProducts,
