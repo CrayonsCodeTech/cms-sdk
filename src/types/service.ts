@@ -15,6 +15,8 @@ export interface Service {
   link_text?: string | null;
   link_url?: string | null;
   order: number;
+  is_published: boolean;
+  published_at?: string | null;
   created_at: string;
   updated_at: string;
   seo: ProductSEO | null;
