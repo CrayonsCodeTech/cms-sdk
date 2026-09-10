@@ -89,23 +89,25 @@ export function createCmsClient(config: CmsClientConfig) {
       },
     };
 
-    let lastError: Error | null = null;
-
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const response = await fetch(url, fetchConfig);
 
         if (!response.ok) {
-          const errorMsg = `API request failed: ${response.status} ${url}`;
-          console.error(errorMsg);
-
           // Retry on transient server errors (502, 503, 504)
           if (attempt < retries && [502, 503, 504].includes(response.status)) {
             await sleep(Math.pow(2, attempt) * 1000);
             continue;
           }
 
-          return null;
+          let errorMsg = `API request failed: ${response.status} ${url}`;
+          try {
+            const body = await response.json();
+            if (body?.message) errorMsg = body.message;
+          } catch {
+            // body not JSON, keep fallback
+          }
+          throw new CmsError(errorMsg, response.status, url);
         }
 
         // 204 / empty body — nothing to parse
@@ -116,20 +118,20 @@ export function createCmsClient(config: CmsClientConfig) {
         const result = await response.json();
         return result.data ?? result;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        console.error(
-          `API request error (attempt ${attempt + 1}/${retries + 1}): ${url}`,
-          lastError,
-        );
+        if (error instanceof CmsError) throw error;
 
         if (attempt < retries) {
           await sleep(Math.pow(2, attempt) * 1000);
           continue;
         }
+
+        const msg =
+          error instanceof Error ? error.message : String(error);
+        throw new CmsError(`Request failed: ${msg}`, undefined, url);
       }
     }
 
-    return null;
+    throw new CmsError(`Request failed after ${retries + 1} attempts`, undefined, url);
   }
 
   async function cmsFetchPaginated<T>(
@@ -137,15 +139,6 @@ export function createCmsClient(config: CmsClientConfig) {
     options: FetchOptions = {},
     retries = 2,
   ): Promise<PaginatedResponse<T>> {
-    const emptyResponse: PaginatedResponse<T> = {
-      data: [],
-      pagination: {
-        page: 1,
-        limit: PAGINATION.DEFAULT_LIMIT,
-        total: 0,
-      },
-    };
-
     const url = `${baseUrl}${endpoint}`;
     const {
       revalidate = CACHE.NO_CACHE,
@@ -168,31 +161,37 @@ export function createCmsClient(config: CmsClientConfig) {
         const response = await fetch(url, fetchConfig);
 
         if (!response.ok) {
-          console.error(`API request failed: ${response.status} ${url}`);
-
           if (attempt < retries && [502, 503, 504].includes(response.status)) {
             await sleep(Math.pow(2, attempt) * 1000);
             continue;
           }
 
-          return emptyResponse;
+          let errorMsg = `API request failed: ${response.status} ${url}`;
+          try {
+            const body = await response.json();
+            if (body?.message) errorMsg = body.message;
+          } catch {
+            // body not JSON, keep fallback
+          }
+          throw new CmsError(errorMsg, response.status, url);
         }
 
         return await response.json();
       } catch (error) {
-        console.error(
-          `API request error (attempt ${attempt + 1}/${retries + 1}): ${url}`,
-          error,
-        );
+        if (error instanceof CmsError) throw error;
 
         if (attempt < retries) {
           await sleep(Math.pow(2, attempt) * 1000);
           continue;
         }
+
+        const msg =
+          error instanceof Error ? error.message : String(error);
+        throw new CmsError(`Request failed: ${msg}`, undefined, url);
       }
     }
 
-    return emptyResponse;
+    throw new CmsError(`Request failed after ${retries + 1} attempts`, undefined, url);
   }
 
   function buildQueryString(
@@ -279,24 +278,19 @@ export function createCmsClient(config: CmsClientConfig) {
     urlPath: string,
     options?: FetchOptions,
   ): Promise<Page | null> {
-    try {
-      const targetUrl =
-        urlPath === "/" || urlPath === ""
-          ? "/"
-          : `/${urlPath.replace(/^\/|\/$/g, "")}`;
+    const targetUrl =
+      urlPath === "/" || urlPath === ""
+        ? "/"
+        : `/${urlPath.replace(/^\/|\/$/g, "")}`;
 
-      return await cmsFetch<Page>(
-        `/api/public/cms/${siteId}/page/by-url/?url=${encodeURIComponent(targetUrl)}`,
-        {
-          revalidate: CACHE.SHORT,
-          tags: ["pages", `page-${targetUrl || "root"}`],
-          ...options,
-        },
-      );
-    } catch (error) {
-      console.error(`Error in fetchPageByUrl for ${urlPath}:`, error);
-      return null;
-    }
+    return cmsFetch<Page>(
+      `/api/public/cms/${siteId}/page/by-url/?url=${encodeURIComponent(targetUrl)}`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["pages", `page-${targetUrl || "root"}`],
+        ...options,
+      },
+    );
   }
 
   // ============================================================================
