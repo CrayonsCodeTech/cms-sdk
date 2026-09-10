@@ -43,5 +43,5 @@ export * from "./types/collection";
 export * from "./types/order";
 export * from "./types/store-setting";
 
-// Components
-export * from "./components/Icon";
+// Icon types
+export * from "./types/icon";
