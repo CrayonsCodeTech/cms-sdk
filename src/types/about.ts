@@ -1,5 +1,5 @@
 export interface AboutValue {
-  image: any;
+  image?: { url?: string; alt?: string };
   icon: string;
   title: string;
   description: string;

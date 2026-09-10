@@ -1,3 +1,5 @@
+import type { PageType } from "../constants/pageTypes";
+
 export interface CTA {
   type: string;
   text: string;
@@ -231,11 +233,11 @@ export interface Page {
   title: string;
   subtitle: string | null;
   sections: Section[];
-  page_type: string;
+  page_type: PageType;
   status: "draft" | "published" | "archived";
   seo: SEO | null;
-  settings: Record<string, any> | null;
-  extra?: Record<string, any> | null;
+  settings: Record<string, unknown> | null;
+  extra?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }

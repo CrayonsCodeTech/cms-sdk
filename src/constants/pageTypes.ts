@@ -18,3 +18,5 @@ export const allPageTypes = [
   "gallery",
   "events",
 ] as const;
+
+export type PageType = typeof allPageTypes[number];

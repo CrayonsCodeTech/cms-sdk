@@ -25,5 +25,5 @@ export interface Header {
   site_id: string;
   nav_links: NavLink[];
   ctas: Cta[];
-  extra: Record<string, any>;
+  extra: Record<string, unknown>;
 }
