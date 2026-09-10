@@ -43,7 +43,16 @@ export interface PublicContactConfig {
 
 /** Attachment caps enforced by the API; mirrored here to fail fast client-side. */
 export const MAX_CONTACT_ATTACHMENTS = 3;
-export const MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES = 4 * 1024 * 1024;
+/**
+ * Total attachment budget, measured on RAW bytes.
+ *
+ * Attachments are forwarded onto the notification email, so the ceiling is
+ * Cloudflare Email's 5 MiB message limit — but the wire format is base64, 4/3
+ * the size. 3 MiB raw leaves headroom; 4 MiB encoded to ~5.33 MiB and was
+ * already over. Keep in step with MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES in
+ * cms-backend/src/constants/limits.ts.
+ */
+export const MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES = 3 * 1024 * 1024;
 export const CONTACT_ATTACHMENT_MIME_ALLOWLIST: readonly string[] = [
   "application/pdf",
   "image/png",

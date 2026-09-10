@@ -777,11 +777,11 @@ Different page types follow different rendering strategies. Understanding these 
 | `[[...slug]]` CMS pages | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)`                                                               |
 | `/about`                | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                                     |
 | `/services`             | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                                 |
-| `/services/[slug]`      | `services`                        | `fetchServices(siteId)` (slug lookup) or `fetchServiceById(siteId, id)`                         |
+| `/services/[slug]`      | `services`                        | `fetchServiceBySlug(siteId, slug)`                                                              |
 | `/blog` or `/news`      | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` (or your CMS-defined base url) + `fetchBlogs(siteId, params)` |
 | `/blog/[slug]`          | `blog`                            | `fetchBlogBySlug(siteId, slug)`                                                                 |
 | `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`                             |
-| `/events/[slug]`        | `events`                          | `fetchEvents(siteId, { limit })` (slug lookup) or `fetchEventById(siteId, id)`                  |
+| `/events/[slug]`        | `events`                          | `fetchEventBySlug(siteId, slug)`                                                                |
 | `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
 | `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })`                   |
 | `/team/[slug]`          | `team-members`                    | `fetchTeamMembers(siteId)` (slug lookup) or custom `fetch`                                      |
@@ -2663,13 +2663,13 @@ export interface FetchOptions extends RequestInit {
 
 ### Other Entities
 
-- `fetchServices(siteId, options?)`: Returns all services.
-- `fetchServiceById(siteId, id, options?)`: Returns a single service by ID.
+- `fetchServices(siteId, params?, options?)`: Returns paginated services. Params: `{ page, limit }`. Only published services are returned — the backend filters on `is_published`, and each item carries `is_published` plus a nullable `published_at`.
+- `fetchServiceBySlug(siteId, slug, options?)`: Returns a single published service by slug, including its `extra.sections`. Returns `null` if not found or unpublished.
 - `fetchTeamMembers(siteId, params?, options?)`: Returns paginated team members. Params: `{ page, limit }`. Default limit: 20.
 - `fetchTeamMembersByCategory(siteId, params, options?)`: Returns paginated team members filtered by category. Params: `{ categoryId, page?, limit? }`. Default limit: 20. **Note:** `categoryId` is now inside the params object.
 - `fetchTestimonials(siteId, params?, options?)`: Returns paginated testimonials. Params: `{ type?, page?, limit? }`. Default limit: 20.
 - `fetchEvents(siteId, params?, options?)`: Returns paginated events. Params: `{ page, limit, search }`.
-- `fetchEventById(siteId, id, options?)`: Returns a single event by ID.
+- `fetchEventBySlug(siteId, slug, options?)`: Returns a single published event by slug. Returns `null` if not found or unpublished.
 - `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search }`.
 - `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. Default limit: 20.
 
@@ -2709,7 +2709,7 @@ export interface FetchOptions extends RequestInit {
     }
     ```
   - **Attachments** (optional): `File[]`. Sending them switches the request to multipart.
-    Caps, enforced server-side and pre-checked client-side: max 3 files, 4 MiB total, and a
+    Caps, enforced server-side and pre-checked client-side: max 3 files, 3 MiB total, and a
     MIME allowlist (PDF, PNG, JPEG, WebP, GIF, plain text, DOC, DOCX).
   - **Throws `CmsError` instead of returning `null`.** Unlike the read methods, a form needs
     to distinguish rejection kinds, so failures throw with `error.status`:
@@ -2733,8 +2733,9 @@ export interface FetchOptions extends RequestInit {
 
 > All store methods use the `/api/public/store/` API prefix, not `/api/public/cms/`.
 
-- `fetchProductCategories(siteId, options?)`: Returns all product categories.
-- `fetchProductBrands(siteId, options?)`: Returns all product brands.
+- `fetchStoreSettings(siteId, options?)`: Returns `{ currency, price_visibility, is_store_enabled }`. Fetch this first — when `price_visibility` is false the API strips `price`, `sale_price` and `cost_price` from every variant, so the storefront must render an inquiry flow rather than prices.
+- `fetchProductCategories(siteId, params?, options?)`: Returns paginated product categories. Params: `{ page, limit, search, ordering, parent_id }`.
+- `fetchProductBrands(siteId, params?, options?)`: Returns paginated product brands. Params: `{ page, limit, search, ordering }`.
 - `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`.
   - `category_id` is hierarchy-aware on the backend and includes child/grandchild categories.
 - `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**.
@@ -2743,7 +2744,9 @@ export interface FetchOptions extends RequestInit {
   - Params: `{ page, limit, category_id }`
   - Works for both manual and smart collections
 - `fetchCollectionDetailById(siteId, id, params?, options?)`: Same as `fetchCollectionDetail`, but keyed by collection ID for CMS-driven product sections.
+- `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag. Params: `{ page, limit }`.
 - `placeOrder(siteId, payload, options?)`: Places an order. Call from a server API route — never client-side.
+  - `metadata` on the payload must be a **flat `Record<string, string>`** — the API validates it on a strict schema, so nested objects, numbers and arrays are rejected with a 400.
 
 ---
 

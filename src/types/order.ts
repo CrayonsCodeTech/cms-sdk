@@ -61,7 +61,9 @@ export interface PlaceOrderPayload {
   customer_phone?: string | null;
   notes?: string | null;
   discount?: number | null;
-  metadata?: unknown;
+  /** Flat string map only — the API validates `Record<string, string>` on a
+   *  strict schema, so nested objects, numbers and arrays are rejected (400). */
+  metadata?: Record<string, string>;
 }
 
 export interface CartItem {

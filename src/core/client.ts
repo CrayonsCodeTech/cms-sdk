@@ -649,7 +649,9 @@ export function createCmsClient(config: CmsClientConfig) {
       const totalBytes = attachments.reduce((sum, f) => sum + f.size, 0);
       if (totalBytes > MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES) {
         throw new CmsError(
-          "Attachments exceed the 4 MiB total size limit",
+          `Attachments exceed the ${
+            MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES / (1024 * 1024)
+          } MiB total size limit`,
           400,
           url,
         );
