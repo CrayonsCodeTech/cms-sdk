@@ -44,6 +44,7 @@ import type {
 export interface FetchOptions extends RequestInit {
   revalidate?: number;
   tags?: string[];
+  retries?: number;
 }
 
 export interface CmsClientConfig {
@@ -70,12 +71,12 @@ export function createCmsClient(config: CmsClientConfig) {
   async function cmsFetch<T>(
     endpoint: string,
     options: FetchOptions = {},
-    retries = 2,
   ): Promise<T | null> {
     const url = `${baseUrl}${endpoint}`;
     const {
       revalidate = CACHE.NO_CACHE,
       tags,
+      retries = 1,
       ...rest
     } = { ...defaultOptions, ...options };
 
@@ -137,12 +138,12 @@ export function createCmsClient(config: CmsClientConfig) {
   async function cmsFetchPaginated<T>(
     endpoint: string,
     options: FetchOptions = {},
-    retries = 2,
   ): Promise<PaginatedResponse<T>> {
     const url = `${baseUrl}${endpoint}`;
     const {
       revalidate = CACHE.NO_CACHE,
       tags,
+      retries = 1,
       ...rest
     } = { ...defaultOptions, ...options };
 
@@ -794,8 +795,8 @@ export function createCmsClient(config: CmsClientConfig) {
         }),
         revalidate: CACHE.NO_CACHE,
         tags: ["redirects", "redirect-404-logs"],
+        retries: 0,
       },
-      0,
     );
   }
 
@@ -997,6 +998,7 @@ export function createCmsClient(config: CmsClientConfig) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       revalidate: CACHE.NO_CACHE,
+      retries: 0,
       ...options,
     });
   }
