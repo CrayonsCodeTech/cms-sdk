@@ -15,7 +15,7 @@ export interface Album {
   created_at: string;
   updated_at: string;
   items?: AlbumItem[];
-  extra?: any;
+  extra?: Record<string, unknown> | null;
 }
 
 export interface AlbumItem {

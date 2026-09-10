@@ -1,3 +1,5 @@
+import type { PageType } from "../constants/pageTypes";
+
 export interface CTA {
   type: string;
   text: string;
@@ -179,6 +181,13 @@ export interface CollectionGroupSection {
   collection_groups: string[];
 }
 
+export interface AlbumGroupSection {
+  section_heading?: string | null;
+  title: string;
+  subtitle?: string | null;
+  album_ids: string[];
+}
+
 export type Section =
   | { id: string; variant?: string | null; type: "hero"; content: HeroContent[] }
   | { id: string; variant?: string | null; type: "custom"; content: CustomContent }
@@ -202,6 +211,12 @@ export type Section =
       variant?: string | null;
       type: "collection-group";
       content: CollectionGroupSection;
+    }
+  | {
+      id: string;
+      variant?: string | null;
+      type: "album-group";
+      content: AlbumGroupSection;
     };
 
 export interface SEO {
@@ -218,11 +233,11 @@ export interface Page {
   title: string;
   subtitle: string | null;
   sections: Section[];
-  page_type: string;
+  page_type: PageType;
   status: "draft" | "published" | "archived";
   seo: SEO | null;
-  settings: Record<string, any> | null;
-  extra?: Record<string, any> | null;
+  settings: Record<string, unknown> | null;
+  extra?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }

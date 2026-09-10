@@ -18,5 +18,5 @@ export interface Footer {
   id: string;
   site_id: string;
   nav_groups: FooterNavGroup[];
-  extra: Record<string, any>;
+  extra: Record<string, unknown>;
 }

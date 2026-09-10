@@ -1,11 +1,10 @@
 {
   "name": "@crayonscodetech/cms-sdk",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "CMS SDK for fetching data and shared types",
   "keywords": [
     "cms",
     "sdk",
-    "nextjs",
     "crayons"
   ],
   "homepage": "https://github.com/CrayonsCodeTech/cms-sdk#readme",
@@ -35,27 +34,11 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "prepare": "pnpm build",
-    "lint": "eslint src/**/*.ts",
-    "doctor": "npx react-doctor@latest"
-  },
-  "dependencies": {
-    "lucide-react": "^1.32.0"
+    "lint": "eslint src/**/*.ts"
   },
   "devDependencies": {
-    "@types/react": "^19.2.18",
     "tsdown": "latest",
     "typescript": "^6.0.3"
-  },
-  "peerDependencies": {
-    "lucide-react": "^1.14.0",
-    "next": ">=13.0.0",
-    "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
-  },
-  "peerDependenciesMeta": {
-    "next": {
-      "optional": true
-    }
   },
   "module": "dist/index.mjs"
 }

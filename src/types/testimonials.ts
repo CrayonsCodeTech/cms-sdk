@@ -14,5 +14,5 @@ export interface Testimonial {
   is_published: boolean;
   created_at: string;
   updated_at: string;
-  extra: any | null;
+  extra: Record<string, unknown> | null;
 }

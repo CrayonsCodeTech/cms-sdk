@@ -8,7 +8,7 @@ export interface BrandGroup {
   order: number;
   created_at: string;
   updated_at: string;
-  extra?: any;
+  extra?: Record<string, unknown> | null;
   brands?: Brand[];
 }
 
