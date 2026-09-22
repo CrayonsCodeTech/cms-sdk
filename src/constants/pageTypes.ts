@@ -15,6 +15,9 @@ export const pageTypes = [
   "team",
   "gallery",
   "events",
+  "clients-partners",
+  "testimonial",
+  "faq",
 ] as const;
 
 /** The full set accepted by the backend's page validator. */
