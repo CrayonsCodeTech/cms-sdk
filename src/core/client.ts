@@ -4,6 +4,7 @@ import type { Header } from "../types/header";
 import type { Footer } from "../types/footer";
 import type { SiteConfig } from "../types/site-config";
 import type { Page, PageListItem } from "../types/cms-page";
+import type { PageType } from "../constants/pageTypes";
 import type { AboutUsData } from "../types/about";
 import type { Service } from "../types/service";
 import type { Blog } from "../types/blog";
@@ -289,6 +290,27 @@ export function createCmsClient(config: CmsClientConfig) {
       {
         revalidate: CACHE.SHORT,
         tags: ["pages", `page-${targetUrl || "root"}`],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * The site's single published page of a given type, with its sections — the
+   * same payload as `fetchPageByUrl`. Prefer this when you know which kind of
+   * page you want but not its url, since an editor can rename the url at any
+   * time. Returns null when the site has no published page of that type.
+   */
+  async function fetchPageByType(
+    siteId: string,
+    pageType: PageType,
+    options?: FetchOptions,
+  ): Promise<Page | null> {
+    return cmsFetch<Page>(
+      `/api/public/cms/${siteId}/page/by-type/${encodeURIComponent(pageType)}/`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["pages", `page-type-${pageType}`],
         ...options,
       },
     );
@@ -1127,6 +1149,7 @@ export function createCmsClient(config: CmsClientConfig) {
     // Pages
     fetchPages,
     fetchPageByUrl,
+    fetchPageByType,
     // About
     fetchAboutUs,
     // Services
