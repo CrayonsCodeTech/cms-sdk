@@ -1,3 +1,6 @@
+import type { Section } from "./cms-page";
+import type { ProductSEO } from "./seo";
+
 export interface BrandGroup {
   id: string;
   site_id: string;
@@ -8,7 +11,8 @@ export interface BrandGroup {
   order: number;
   created_at: string;
   updated_at: string;
-  extra?: Record<string, unknown> | null;
+  seo?: ProductSEO | null;
+  extra?: (Record<string, unknown> & { sections?: Section[] }) | null;
   brands?: Brand[];
 }
 

@@ -1,3 +1,5 @@
+import type { Section } from "./cms-page";
+
 export interface Album {
   id: string;
   site_id: string;
@@ -15,7 +17,7 @@ export interface Album {
   created_at: string;
   updated_at: string;
   items?: AlbumItem[];
-  extra?: Record<string, unknown> | null;
+  extra?: (Record<string, unknown> & { sections?: Section[] }) | null;
 }
 
 export interface AlbumItem {
