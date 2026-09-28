@@ -47,6 +47,12 @@ export type ProductVariantListItem = Pick<
   "id" | "sku" | "name" | "price" | "sale_price" | "inventory" | "low_stock" | "order"
 >;
 
+export interface ProductTag {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface ProductListItem {
   id: string;
   site_id: string;
@@ -60,6 +66,8 @@ export interface ProductListItem {
   thumbnail_url: string | null;
   seo: ProductSEO | null;
   extra: ProductExtraData | null;
+  // Optional: CMS backends that predate public tags omit the field
+  tags?: ProductTag[];
   created_at: string;
   variants?: ProductVariantListItem[];
 }
