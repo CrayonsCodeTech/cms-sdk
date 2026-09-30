@@ -1491,6 +1491,8 @@ import type {
 > ```
 >
 > `ProductExtraData` is a flexible `Record<string, unknown>` for custom data.
+>
+> `Product` and `ProductListItem` also carry `tags?: ProductTag[]` (`{ id, name, slug }`) — the store tags assigned in the CMS, not the SEO keywords in `seo.tags`.
 
 > `Product.description` is HTML — render with `dangerouslySetInnerHTML`. Public product variants expose `inventory` as a boolean plus `low_stock`. Collection detail responses normalize both manual and smart collections into `collection.items`.
 
