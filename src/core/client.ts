@@ -27,7 +27,7 @@ import {
   MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES,
   CONTACT_ATTACHMENT_MIME_ALLOWLIST,
 } from "../types/contact";
-import type { Product, ProductListItem, ProductVariant } from "../types/product";
+import type { Product, ProductListItem } from "../types/product";
 import type { ProductCategory } from "../types/product-category";
 import type { ProductBrand } from "../types/product-brand";
 import type { Collection, CollectionDetail } from "../types/collection";

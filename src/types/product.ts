@@ -12,6 +12,9 @@ export interface ProductImage {
   updated_at: string;
 }
 
+// Variant as returned by the public store API. The raw inventory count is masked
+// to a boolean (in stock?) + low_stock signal, and the merchant's cost price is
+// never returned. price/sale_price are absent when the site hides prices.
 export interface ProductVariant {
   id: string;
   product_id: string;
@@ -20,30 +23,29 @@ export interface ProductVariant {
   name: string | null;
   model_number: string | null;
   order: number;
-  price: number;
+  // Absent when the site's price_visibility is false (see fetchStoreSettings)
+  price?: number;
   sale_price?: number | null;
-  cost_price?: number | null;
-  inventory: number;
+  inventory: boolean;
+  low_stock: boolean;
   weight: number | null;
-  attributes?: Record<string, string>;
-  features?: string[];
-  specifications?: Record<string, Record<string, string>>;
-  included_items?: string[];
+  // Nullable JSON columns: null when the admin never set them
+  attributes: Record<string, string> | null;
+  features: string[] | null;
+  specifications: Record<string, Record<string, string>> | null;
+  included_items: string[] | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
   images: ProductImage[];
 }
 
-// Public endpoints mask raw inventory count: boolean (in stock?) + low_stock signal
-export type PublicProductVariant = Omit<ProductVariant, "inventory"> & {
-  inventory: boolean;
-  low_stock: boolean;
-};
+/** @deprecated Same as `ProductVariant`, which now describes the public shape. */
+export type PublicProductVariant = ProductVariant;
 
 // Subset returned on product list responses (public)
 export type ProductVariantListItem = Pick<
-  PublicProductVariant,
+  ProductVariant,
   "id" | "sku" | "name" | "price" | "sale_price" | "inventory" | "low_stock" | "order"
 >;
 
@@ -78,5 +80,5 @@ export interface Product extends Omit<ProductListItem, "variants"> {
   metadata: unknown;
   deleted_at: string | null;
   updated_at: string;
-  variants?: PublicProductVariant[];
+  variants?: ProductVariant[];
 }

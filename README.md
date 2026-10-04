@@ -1494,7 +1494,7 @@ import type {
 >
 > `Product` and `ProductListItem` also carry `tags?: ProductTag[]` (`{ id, name, slug }`) — the store tags assigned in the CMS, not the SEO keywords in `seo.tags`.
 
-> `Product.description` is HTML — render with `dangerouslySetInnerHTML`. Public product variants expose `inventory` as a boolean plus `low_stock`. Collection detail responses normalize both manual and smart collections into `collection.items`.
+> `Product.description` is HTML — render with `dangerouslySetInnerHTML`. Public product variants expose `inventory` as a boolean plus `low_stock`, never include `cost_price`, and omit `price`/`sale_price` when the site's `price_visibility` is false (so `price` is optional). `attributes`, `features`, `specifications` and `included_items` are `null` when unset. Collection detail responses normalize both manual and smart collections into `collection.items`.
 
 ---
 
@@ -1703,7 +1703,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               aria-pressed={selectedVariant?.id === v.id}
             >
               {v.name ?? v.sku} — ${v.sale_price ?? v.price}
-              {v.inventory === 0 && " (Out of stock)"}
+              {!v.inventory && " (Out of stock)"}
             </button>
           ))}
         </div>
@@ -1719,7 +1719,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       </div>
       <button
         onClick={handleAddToCart}
-        disabled={!selectedVariant || selectedVariant.inventory === 0}
+        disabled={!selectedVariant || !selectedVariant.inventory}
       >
         Add to Cart
       </button>
@@ -1969,11 +1969,14 @@ export default async function CollectionDetailPage({
             )}
             <h2>{item.product.name}</h2>
             {/* Show lowest variant price */}
-            {item.product.variants.length > 0 && (
+            {/* price is absent when the site hides prices */}
+            {item.product.variants.some((v) => v.price != null) && (
               <p>
                 From $
                 {Math.min(
-                  ...item.product.variants.map((v) => v.sale_price ?? v.price),
+                  ...item.product.variants.map(
+                    (v) => v.sale_price ?? v.price ?? Infinity,
+                  ),
                 )}
               </p>
             )}
@@ -2075,7 +2078,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
   const subtotal = items.reduce(
-    (sum, i) => sum + (i.variant.sale_price ?? i.variant.price) * i.quantity,
+    (sum, i) => sum + (i.variant.sale_price ?? i.variant.price ?? 0) * i.quantity,
     0,
   );
 
@@ -2735,7 +2738,7 @@ export interface FetchOptions extends RequestInit {
 
 > All store methods use the `/api/public/store/` API prefix, not `/api/public/cms/`.
 
-- `fetchStoreSettings(siteId, options?)`: Returns `{ currency, price_visibility, is_store_enabled }`. Fetch this first — when `price_visibility` is false the API strips `price`, `sale_price` and `cost_price` from every variant, so the storefront must render an inquiry flow rather than prices.
+- `fetchStoreSettings(siteId, options?)`: Returns `{ currency, price_visibility, is_store_enabled }`. Fetch this first — public endpoints never return `cost_price`, and when `price_visibility` is false the API also strips `price` and `sale_price` from every variant, so the storefront must render an inquiry flow rather than prices.
 - `fetchProductCategories(siteId, params?, options?)`: Returns paginated product categories. Params: `{ page, limit, search, ordering, parent_id }`.
 - `fetchProductBrands(siteId, params?, options?)`: Returns paginated product brands. Params: `{ page, limit, search, ordering }`.
 - `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`.
