@@ -25,16 +25,20 @@ Content updates and management are handled through the CMS dashboard:
 
 ## Installation
 
-You can install the SDK directly from private GitHub repository. Ensure you have access before proceeding.
+The SDK is published to npm as `@crayonscodetech/cms-sdk`.
 
 ```bash
 npm install @crayonscodetech/cms-sdk
 # or
-npm install git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git
+pnpm add @crayonscodetech/cms-sdk
 # or
-pnpm add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git --allow-build=@crayons/cms-sdk
-# or
-bun add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git && bun pm trust @crayons/cms-sdk
+bun add @crayonscodetech/cms-sdk
+```
+
+Installing from the private GitHub repository also works if you have access, but it builds the package on install:
+
+```bash
+pnpm add git+ssh://git@github.com/CrayonsCodeTech/cms-sdk.git --allow-build=@crayonscodetech/cms-sdk
 ```
 
 ## Quick Start: Creating a New Next.js App (Cloudflare)
@@ -85,7 +89,8 @@ NEXT_PUBLIC_CMS_SITE_ID=your-site-id-here
 It is recommended to create a singleton instance of the CMS client in your project (e.g., `lib/cms.ts`).
 
 ```typescript
-import { createCmsClient } from "@crayons/cms-sdk";
+import { CmsError, createCmsClient } from "@crayonscodetech/cms-sdk";
+import type { PaginatedResponse } from "@crayonscodetech/cms-sdk";
 
 export const cms = createCmsClient({
   baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL || "https://api.example.com",
@@ -95,19 +100,53 @@ export const cms = createCmsClient({
 });
 
 export const SITE_ID = process.env.NEXT_PUBLIC_CMS_SITE_ID || "";
+
+/**
+ * Read methods throw a `CmsError` for any non-2xx response, a 404 included.
+ * Wrap a read in `orNull()` when "not there" is a normal outcome: 404 (missing)
+ * and 403 (a feature such as the store or redirects is switched off for the
+ * site) resolve to `null`. Every other error still throws.
+ */
+export async function orNull<T>(request: Promise<T | null>): Promise<T | null> {
+  try {
+    return await request;
+  } catch (error) {
+    if (error instanceof CmsError && (error.status === 404 || error.status === 403)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Pages through a list method until an item matches. Use it where the API has
+ * no by-slug lookup (albums, product categories, product brands); public list
+ * endpoints return at most 20–40 items per page, so a single page can miss it.
+ */
+export async function findInPages<T>(
+  fetchPage: (page: number) => Promise<PaginatedResponse<T>>,
+  match: (item: T) => boolean,
+): Promise<T | null> {
+  for (let page = 1; ; page++) {
+    const { data, pagination } = await fetchPage(page);
+    const hit = data.find(match);
+    if (hit) return hit;
+    if (data.length === 0 || page * pagination.limit >= pagination.total) return null;
+  }
+}
 ```
 
 ### 3. Usage in Components
 
 #### Conditional Rendering — Header & Footer Inner Data
 
-`fetchHeader` and `fetchFooter` return `null` on failure. Inside your components, guard each field individually since arrays may be empty and optional fields may be absent.
+`fetchHeader` and `fetchFooter` throw a `CmsError` when the request fails, including a 404 when the site has none yet. Fetch them as `orNull(cms.fetchHeader(SITE_ID))` (see [Initialization](#2-initialization)) so a missing header or footer is `null` instead of an error page, and render nothing in that case. Inside your components, guard each field individually since arrays may be empty and optional fields may be absent.
 
 **SiteHeader example:**
 
 ```tsx
 // components/site-header.tsx
-import type { Header, SiteConfig } from "@crayons/cms-sdk";
+import type { Header, SiteConfig } from "@crayonscodetech/cms-sdk";
 import Link from "next/link";
 
 interface Props {
@@ -169,7 +208,7 @@ export function SiteHeader({ header, siteConfig }: Props) {
 
 ```tsx
 // components/site-footer.tsx
-import type { Footer } from "@crayons/cms-sdk";
+import type { Footer } from "@crayonscodetech/cms-sdk";
 import Link from "next/link";
 
 export function SiteFooter({ footer }: { footer: Footer }) {
@@ -268,33 +307,28 @@ const { site_name, logo, contact } = siteConfig;
 }
 ```
 
-> `siteConfig` can be `null` if the fetch fails, so always guard it at the layout level and pass it down only if it exists.
+> Fetch it as `orNull(cms.fetchSiteConfig(SITE_ID))`: `fetchSiteConfig` throws a `CmsError` if the request fails, and `orNull` turns a missing config into `null`. Guard it at the layout level and pass it down only if it exists.
 
-#### 4. Icon Component (Lucide)
+#### 4. Icons
 
-The SDK provides a built-in `Icon` component to render CMS-driven icons. It uses `lucide-react` under the hood.
+CMS fields that hold an icon store an icon **name** such as `"Mail"` or `"Calendar"`. The SDK exports the list of names the CMS offers as `ICON_NAMES` and its type as `IconName`; it does not ship an icon component or depend on React. Render the name with your own icon library. With `lucide-react`, whose component names match:
 
 ```tsx
-import { Icon } from "@crayons/cms-sdk";
+// components/cms-icon.tsx
+import { icons, HelpCircle, type LucideProps } from "lucide-react";
+import type { IconName } from "@crayonscodetech/cms-sdk";
 
-export function FeatureItem({
-  iconName,
-  title,
-}: {
-  iconName: string;
-  title: string;
-}) {
-  return (
-    <div>
-      {/* Renders the Lucide icon by name, falling back to HelpCircle if not found */}
-      <Icon name={iconName} size={24} className="text-primary" />
-      <h3>{title}</h3>
-    </div>
-  );
+export function CmsIcon({ name, ...props }: { name: IconName | string } & LucideProps) {
+  const Icon = icons[name as keyof typeof icons] ?? HelpCircle;
+  return <Icon {...props} />;
 }
 ```
 
-> **Requirements**: To use the `Icon` component, you must have `lucide-react` and `react` installed in your project.
+```tsx
+<CmsIcon name={item.icon} size={24} className="text-primary" />
+```
+
+> The CMS can return a name your library doesn't have, so always keep a fallback icon.
 
 ---
 
@@ -361,11 +395,13 @@ This utility determines if a URL path is an exact CMS page or a "Detail" page (e
 
 ```tsx
 // lib/cms-router.ts
-import { cms, SITE_ID } from "./cms";
+import { cms, orNull, SITE_ID } from "./cms";
 
 export async function resolveCmsRoute(slug: string[]) {
   const urlPath = slug.length > 0 ? `/${slug.join("/")}` : "/";
-  const exactPage = await cms.fetchPageByUrl(SITE_ID, urlPath);
+  // fetchPageByUrl throws on 404; orNull turns "no such page" into null so the
+  // detail-page fallback below can run.
+  const exactPage = await orNull(cms.fetchPageByUrl(SITE_ID, urlPath));
 
   if (exactPage) return { type: "page" as const, data: exactPage };
 
@@ -374,7 +410,7 @@ export async function resolveCmsRoute(slug: string[]) {
   if (slug.length > 0) {
     for (let i = slug.length - 1; i >= 0; i--) {
       const parentPath = "/" + slug.slice(0, i).join("/");
-      const parentPage = await cms.fetchPageByUrl(SITE_ID, parentPath || "/");
+      const parentPage = await orNull(cms.fetchPageByUrl(SITE_ID, parentPath || "/"));
 
       if (parentPage) {
         return {
@@ -461,7 +497,7 @@ The `RenderSections` component is the core rendering primitive. It receives `pag
 
 ```tsx
 // components/render-sections.tsx
-import type { Section } from "@crayons/cms-sdk";
+import type { Section } from "@crayonscodetech/cms-sdk";
 
 // Import base section components
 import { HeroSection } from "@/components/sections/hero";
@@ -646,7 +682,7 @@ For the new store-aware sections:
 ```tsx
 // components/sections/testimonial.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import type { TestimonialsSection } from "@crayons/cms-sdk";
+import type { TestimonialsSection } from "@crayonscodetech/cms-sdk";
 
 interface Props {
   content: TestimonialsSection;
@@ -682,7 +718,7 @@ export async function TestimonialSection({ content }: Props) {
 ```tsx
 // components/sections/team.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import type { TeamSection } from "@crayons/cms-sdk";
+import type { TeamSection } from "@crayonscodetech/cms-sdk";
 
 export async function TeamSection({ content }: { content: TeamSection }) {
   const { data: members } = await cms.fetchTeamMembers(SITE_ID);
@@ -729,7 +765,7 @@ export async function TeamSection({ content }: { content: TeamSection }) {
 ```tsx
 // components/sections/faq.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import type { FaqSection } from "@crayons/cms-sdk";
+import type { FaqSection } from "@crayonscodetech/cms-sdk";
 
 export async function FaqSection({ content }: { content: FaqSection }) {
   // Fetch the specific group if a group_id is set, otherwise fetch all
@@ -799,7 +835,7 @@ import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { HeroSection } from "@/components/sections/hero";
 import { RenderSections } from "@/components/render-sections";
-import type { Page } from "@crayons/cms-sdk";
+import type { Page } from "@crayonscodetech/cms-sdk";
 
 export default async function HomePage({ page }: { page: Page }) {
   const { sections } = page;
@@ -857,10 +893,10 @@ About pages usually combine:
 
 ```tsx
 // components/pages/AboutPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
-import SafeHtml from "@/components/safe-html";
-import type { Page, SiteConfig } from "@crayons/cms-sdk";
+import SafeHtml from "@/components/safe-html"; // defined under "Rich Text / HTML Fields"
+import type { Page, SiteConfig } from "@crayonscodetech/cms-sdk";
 
 export default async function AboutPage({
   page,
@@ -869,7 +905,7 @@ export default async function AboutPage({
   page: Page;
   site?: SiteConfig | null;
 }) {
-  const about = await cms.fetchAboutUs(SITE_ID);
+  const about = await orNull(cms.fetchAboutUs(SITE_ID));
   if (!about) notFound();
 
   const aboutSection = page.sections.find((s) => s.type === "about");
@@ -927,10 +963,11 @@ The `service` section type on a page provides only CMS-controlled **headings and
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { ServiceCard } from "@/components/service-card";
-import type { Page } from "@crayons/cms-sdk";
+import type { Page } from "@crayonscodetech/cms-sdk";
 
 export default async function ServicesPage({ page }: { page: Page }) {
-  const services = await cms.fetchServices(SITE_ID);
+  // fetchServices is paginated: the list is in `.data`
+  const { data: services } = await cms.fetchServices(SITE_ID);
 
   // The "service" section from the page carries the heading/subtitle
   const serviceSection = page.sections.find((s) => s.type === "service");
@@ -960,9 +997,10 @@ export default async function ServicesPage({ page }: { page: Page }) {
 
 ```tsx
 // components/pages/ServiceDetailPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { RenderSections } from "@/components/render-sections";
+import SafeHtml from "@/components/safe-html";
 
 export default async function ServiceDetailPage({
   params,
@@ -972,19 +1010,18 @@ export default async function ServiceDetailPage({
   parentUrl?: string;
 }) {
   const { slug } = await params;
-  const services = await cms.fetchServices(SITE_ID);
-  const service = services.find((s) => s.slug === slug);
+  const service = await orNull(cms.fetchServiceBySlug(SITE_ID, slug));
 
   if (!service) notFound();
 
   return (
     <article>
       {service.image_url && (
-        <img src={service.image_url} alt={service.image_alt} />
+        <img src={service.image_url} alt={service.image_alt ?? service.title} />
       )}
       <h1>{service.title}</h1>
-      <p>{service.short_description}</p>
-      <div dangerouslySetInnerHTML={{ __html: service.description }} />
+      {service.excerpt && <p>{service.excerpt}</p>}
+      <SafeHtml html={service.description} />
       {service.features.length > 0 && (
         <ul>
           {service.features.map((f) => (
@@ -1017,7 +1054,7 @@ The `blog` section type carries heading/subtitle text only. Fetch the actual pos
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { Page } from "@crayons/cms-sdk";
+import type { Page } from "@crayonscodetech/cms-sdk";
 
 export default async function BlogPage({ page }: { page: Page }) {
   const { data: blogs } = await cms.fetchBlogs(SITE_ID, { page: 1, limit: 12 });
@@ -1063,9 +1100,10 @@ const { data: categories } = await cms.fetchCategories(SITE_ID);
 
 ```tsx
 // components/pages/BlogDetailPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { RenderSections } from "@/components/render-sections";
+import SafeHtml from "@/components/safe-html";
 
 export default async function BlogDetailPage({
   params,
@@ -1073,7 +1111,7 @@ export default async function BlogDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const full = await cms.fetchBlogBySlug(SITE_ID, slug);
+  const full = await orNull(cms.fetchBlogBySlug(SITE_ID, slug));
   if (!full) notFound();
 
   return (
@@ -1083,9 +1121,7 @@ export default async function BlogDetailPage({
       )}
       <h1>{full.title}</h1>
       <p>By {full.author}</p>
-      {full.description && (
-        <div dangerouslySetInnerHTML={{ __html: full.description }} />
-      )}
+      <SafeHtml html={full.description} />
 
       {/* Render sections from extra.sections if present */}
       {full.extra?.sections && full.extra.sections.length > 0 && (
@@ -1111,7 +1147,7 @@ Same pattern as blogs. The `event` section carries display text; actual event da
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { Page, SiteConfig } from "@crayons/cms-sdk";
+import type { Page, SiteConfig } from "@crayonscodetech/cms-sdk";
 
 export default async function EventsPage({
   page,
@@ -1147,9 +1183,10 @@ export default async function EventsPage({
 
 ```tsx
 // components/pages/EventDetailPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { RenderSections } from "@/components/render-sections";
+import SafeHtml from "@/components/safe-html";
 
 export default async function EventDetailPage({
   params,
@@ -1157,8 +1194,7 @@ export default async function EventDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const { data: events } = await cms.fetchEvents(SITE_ID, { limit: 1000 });
-  const event = events.find((e) => e.slug === slug);
+  const event = await orNull(cms.fetchEventBySlug(SITE_ID, slug));
 
   if (!event) notFound();
 
@@ -1172,9 +1208,7 @@ export default async function EventDetailPage({
       {event.end_date && <time> – {event.end_date}</time>}
       {event.location_name && <p>{event.location_name}</p>}
       {event.address && <address>{event.address}</address>}
-      {event.description && (
-        <div dangerouslySetInnerHTML={{ __html: event.description }} />
-      )}
+      <SafeHtml html={event.description} />
 
       {/* Render sections from extra.sections if present */}
       {event.extra?.sections && event.extra.sections.length > 0 && (
@@ -1196,9 +1230,9 @@ The `gallery` section carries the `album_id` to display. Fetch albums with `fetc
 ```tsx
 // components/pages/GalleryPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import { notFound } from "next/navigation";
 import Link from "next/link";
-import type { Page } from "@crayons/cms-sdk";
+import SafeHtml from "@/components/safe-html";
+import type { Page } from "@crayonscodetech/cms-sdk";
 
 export default async function GalleryPage({ page }: { page: Page }) {
   const { data: albums } = await cms.fetchAlbums(SITE_ID);
@@ -1214,7 +1248,8 @@ export default async function GalleryPage({ page }: { page: Page }) {
             />
           )}
           <h2>{album.title}</h2>
-          {album.description && <p>{album.description}</p>}
+          {/* description is rich-text HTML */}
+          <SafeHtml html={album.description} />
         </Link>
       ))}
     </div>
@@ -1224,10 +1259,13 @@ export default async function GalleryPage({ page }: { page: Page }) {
 
 **Album detail page:**
 
+There is no album-by-slug method, so page through `fetchAlbums` with `findInPages` (see [Initialization](#2-initialization)); a single page can miss albums beyond the first 20.
+
 ```tsx
 // components/pages/GalleryDetailPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, findInPages, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import SafeHtml from "@/components/safe-html";
 
 export default async function AlbumDetailPage({
   params,
@@ -1235,21 +1273,27 @@ export default async function AlbumDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const { data: albums } = await cms.fetchAlbums(SITE_ID);
-  const album = albums.find((a) => a.slug === slug);
+  const album = await findInPages(
+    (page) => cms.fetchAlbums(SITE_ID, { page }),
+    (a) => a.slug === slug,
+  );
 
   if (!album) notFound();
 
   return (
     <div>
       <h1>{album.title}</h1>
-      {album.description && <p>{album.description}</p>}
+      <SafeHtml html={album.description} />
 
       <div className="grid">
         {album.items?.map((item) => (
           <figure key={item.id}>
             <img src={item.image_url} alt={item.image_alt ?? ""} />
-            {item.caption && <figcaption>{item.caption}</figcaption>}
+            {item.caption && (
+              <figcaption>
+                <SafeHtml html={item.caption} />
+              </figcaption>
+            )}
           </figure>
         ))}
       </div>
@@ -1467,7 +1511,7 @@ import type {
   PlaceOrderPayload,
   CartItem,
   ProductSEO,
-} from "@crayons/cms-sdk";
+} from "@crayonscodetech/cms-sdk";
 ```
 
 > **SEO and Extra Fields**
@@ -1494,7 +1538,7 @@ import type {
 >
 > `Product` and `ProductListItem` also carry `tags?: ProductTag[]` (`{ id, name, slug }`) — the store tags assigned in the CMS, not the SEO keywords in `seo.tags`.
 
-> `Product.description` is HTML — render with `dangerouslySetInnerHTML`. Public product variants expose `inventory` as a boolean plus `low_stock`, never include `cost_price`, and omit `price`/`sale_price` when the site's `price_visibility` is false (so `price` is optional). `attributes`, `features`, `specifications` and `included_items` are `null` when unset. Collection detail responses normalize both manual and smart collections into `collection.items`.
+> `Product.description` is HTML — render it through `SafeHtml` (see [Rich Text / HTML Fields](#rich-text--html-fields)), never raw. Public product variants expose `inventory` as a boolean plus `low_stock`, never include `cost_price`, and omit `price`/`sale_price` when the site's `price_visibility` is false (so `price` is optional). `attributes`, `features`, `specifications` and `included_items` are `null` when unset. Collection detail responses normalize both manual and smart collections into `collection.items`.
 
 ---
 
@@ -1517,6 +1561,7 @@ Store routes are top-level and handled before CMS page resolution in `[[...slug]
 
 ```tsx
 // app/[[...slug]]/page.tsx
+import { notFound } from "next/navigation";
 import { STORE_ENABLED } from "@/config/store";
 import ProductsPage from "@/components/pages/ProductsPage";
 import ProductDetailPage from "@/components/pages/ProductDetailPage";
@@ -1527,7 +1572,13 @@ import BrandProductsPage from "@/components/pages/BrandProductsPage";
 import CollectionsPage from "@/components/pages/CollectionsPage";
 import CollectionDetailPage from "@/components/pages/CollectionDetailPage";
 
-export default async function CatchAll({ params, searchParams }) {
+export default async function CatchAll({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug?: string[] }>;
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const { slug = [] } = await params;
 
   // ── Store routes (resolved before CMS pages) ──────────────────────────────
@@ -1565,7 +1616,12 @@ export default async function CatchAll({ params, searchParams }) {
 
   if (slug[0] === "collections") {
     if (slug.length === 1) return <CollectionsPage />;
-    return <CollectionDetailPage params={Promise.resolve({ slug: slug[1] })} />;
+    return (
+      <CollectionDetailPage
+        params={Promise.resolve({ slug: slug[1] })}
+        searchParams={searchParams}
+      />
+    );
   }
 
   // ── CMS pages (catch-all continues below) ────────────────────────────────
@@ -1580,7 +1636,7 @@ export default async function CatchAll({ params, searchParams }) {
 ```tsx
 // components/pages/ProductsPage.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import type { Product, ProductCategory } from "@crayons/cms-sdk";
+import type { Product, ProductCategory } from "@crayonscodetech/cms-sdk";
 import Link from "next/link";
 
 interface Props {
@@ -1594,14 +1650,14 @@ interface Props {
 export default async function ProductsPage({ searchParams }: Props) {
   const { page = "1", search, category_id } = await searchParams;
 
-  const [{ data: products, pagination }, categories] = await Promise.all([
+  const [{ data: products, pagination }, { data: categories }] = await Promise.all([
     cms.fetchProducts(SITE_ID, {
       page: Number(page),
       limit: 12,
       search,
       category_id,
     }),
-    cms.fetchProductCategories(SITE_ID),
+    cms.fetchProductCategories(SITE_ID, { limit: 40 }),
   ]);
 
   return (
@@ -1647,7 +1703,7 @@ The detail page is split into a **server component** (data fetch) and a **client
 
 ```tsx
 // components/pages/ProductDetailPage.tsx  (server component)
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import ProductDetailClient from "@/components/store/ProductDetailClient";
 
@@ -1657,7 +1713,7 @@ export default async function ProductDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = await cms.fetchProductDetail(SITE_ID, slug);
+  const product = await orNull(cms.fetchProductDetail(SITE_ID, slug));
 
   if (!product) notFound();
 
@@ -1670,8 +1726,9 @@ export default async function ProductDetailPage({
 "use client";
 
 import { useState } from "react";
-import type { Product, ProductVariant } from "@crayons/cms-sdk";
+import type { Product, ProductVariant } from "@crayonscodetech/cms-sdk";
 import { useCart } from "@/context/CartContext";
+import SafeHtml from "@/components/safe-html";
 
 export default function ProductDetailClient({ product }: { product: Product }) {
   const { addItem } = useCart();
@@ -1702,7 +1759,9 @@ export default function ProductDetailClient({ product }: { product: Product }) {
               onClick={() => setSelectedVariant(v)}
               aria-pressed={selectedVariant?.id === v.id}
             >
-              {v.name ?? v.sku} — ${v.sale_price ?? v.price}
+              {v.name ?? v.sku}
+              {/* price is absent when the site hides prices */}
+              {(v.sale_price ?? v.price) != null && ` — $${v.sale_price ?? v.price}`}
               {!v.inventory && " (Out of stock)"}
             </button>
           ))}
@@ -1725,7 +1784,7 @@ export default function ProductDetailClient({ product }: { product: Product }) {
       </button>
 
       {/* Rich-text description */}
-      <div dangerouslySetInnerHTML={{ __html: product.description }} />
+      <SafeHtml html={product.description} />
 
       {/* Variant specs */}
       {selectedVariant?.specifications &&
@@ -1754,7 +1813,8 @@ import { cms, SITE_ID } from "@/lib/cms";
 import Link from "next/link";
 
 export default async function ProductCategoriesPage() {
-  const categories = await cms.fetchProductCategories(SITE_ID);
+  // Paginated, up to 40 per page: pass { page } to show more
+  const { data: categories } = await cms.fetchProductCategories(SITE_ID, { limit: 40 });
 
   return (
     <div className="grid">
@@ -1774,7 +1834,7 @@ export default async function ProductCategoriesPage() {
 
 ```tsx
 // components/pages/CategoryProductsPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, findInPages, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -1790,9 +1850,12 @@ export default async function CategoryProductsPage({
   const { slug } = await params;
   const { page = "1", search } = await searchParams;
 
-  // Resolve category_id from slug
-  const categories = await cms.fetchProductCategories(SITE_ID);
-  const category = categories.find((c) => c.slug === slug);
+  // Resolve category_id from slug. There is no by-slug lookup and the list is
+  // paginated, so page through it rather than searching only the first page.
+  const category = await findInPages(
+    (p) => cms.fetchProductCategories(SITE_ID, { page: p, limit: 40 }),
+    (c) => c.slug === slug,
+  );
   if (!category) notFound();
 
   const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
@@ -1832,7 +1895,8 @@ import { cms, SITE_ID } from "@/lib/cms";
 import Link from "next/link";
 
 export default async function BrandsPage() {
-  const brands = await cms.fetchProductBrands(SITE_ID);
+  // Paginated, up to 40 per page: pass { page } to show more
+  const { data: brands } = await cms.fetchProductBrands(SITE_ID, { limit: 40 });
 
   return (
     <div className="grid">
@@ -1852,7 +1916,7 @@ export default async function BrandsPage() {
 
 ```tsx
 // components/pages/BrandProductsPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, findInPages, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -1868,8 +1932,11 @@ export default async function BrandProductsPage({
   const { slug } = await params;
   const { page = "1", search } = await searchParams;
 
-  const brands = await cms.fetchProductBrands(SITE_ID);
-  const brand = brands.find((b) => b.slug === slug);
+  // No by-slug lookup and at most 40 brands per page: page through the list.
+  const brand = await findInPages(
+    (p) => cms.fetchProductBrands(SITE_ID, { page: p, limit: 40 }),
+    (b) => b.slug === slug,
+  );
   if (!brand) notFound();
 
   const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
@@ -1909,7 +1976,7 @@ import { cms, SITE_ID } from "@/lib/cms";
 import Link from "next/link";
 
 export default async function CollectionsPage() {
-  const collections = await cms.fetchCollections(SITE_ID);
+  const { data: collections } = await cms.fetchCollections(SITE_ID);
 
   return (
     <div className="grid">
@@ -1929,7 +1996,7 @@ export default async function CollectionsPage() {
 
 ```tsx
 // components/pages/CollectionDetailPage.tsx
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -1942,11 +2009,13 @@ export default async function CollectionDetailPage({
 }) {
   const { slug } = await params;
   const { category_id, page = "1" } = await searchParams;
-  const collection = await cms.fetchCollectionDetail(SITE_ID, slug, {
-    category_id,
-    page: Number(page),
-    limit: 20,
-  });
+  const collection = await orNull(
+    cms.fetchCollectionDetail(SITE_ID, slug, {
+      category_id,
+      page: Number(page),
+      limit: 20,
+    }),
+  );
 
   if (!collection) notFound();
 
@@ -1970,7 +2039,7 @@ export default async function CollectionDetailPage({
             <h2>{item.product.name}</h2>
             {/* Show lowest variant price */}
             {/* price is absent when the site hides prices */}
-            {item.product.variants.some((v) => v.price != null) && (
+            {item.product.variants?.some((v) => v.price != null) && (
               <p>
                 From $
                 {Math.min(
@@ -2008,7 +2077,7 @@ The cart is managed client-side using React Context with `localStorage` persiste
 "use client";
 
 import { createContext, useContext, useState, useEffect } from "react";
-import type { CartItem, Product, ProductVariant } from "@crayons/cms-sdk";
+import type { CartItem, Product, ProductVariant } from "@crayonscodetech/cms-sdk";
 
 interface CartContextValue {
   items: CartItem[];
@@ -2111,16 +2180,27 @@ export function useCart() {
 
 ```tsx
 // app/layout.tsx — wrap children with CartProvider
+import type { ReactNode } from "react";
 import { CartProvider } from "@/context/CartContext";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import CartDrawer from "@/components/store/CartDrawer";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const [header, footer, siteConfig] = await Promise.all([
+    orNull(cms.fetchHeader(SITE_ID)),
+    orNull(cms.fetchFooter(SITE_ID)),
+    orNull(cms.fetchSiteConfig(SITE_ID)),
+  ]);
+
   return (
     <html>
       <body>
         <CartProvider>
-          <SiteHeader ... />
+          {header && <SiteHeader header={header} siteConfig={siteConfig} />}
           {children}
-          <SiteFooter ... />
+          {footer && <SiteFooter footer={footer} />}
           <CartDrawer />   {/* slides in when isOpen = true */}
         </CartProvider>
       </body>
@@ -2140,7 +2220,7 @@ export default function RootLayout({ children }) {
 ```ts
 // app/api/store/orders/route.ts
 import { cms, SITE_ID } from "@/lib/cms";
-import type { PlaceOrderPayload } from "@crayons/cms-sdk";
+import type { PlaceOrderPayload } from "@crayonscodetech/cms-sdk";
 
 export async function POST(req: Request) {
   const payload: PlaceOrderPayload = await req.json();
@@ -2155,7 +2235,7 @@ export async function POST(req: Request) {
 "use client";
 
 import { useState } from "react";
-import type { PlaceOrderPayload } from "@crayons/cms-sdk";
+import type { PlaceOrderPayload } from "@crayonscodetech/cms-sdk";
 import { useCart } from "@/context/CartContext";
 
 export function CheckoutForm() {
@@ -2244,7 +2324,7 @@ The CMS supports managed redirects (301/302/307/308) configured through the dash
 
 `resolveRedirect` supports both **manual** redirects (exact path match) and **pattern** redirects (e.g. `/blog/:slug → /news/:slug`). When a pattern matches, `ResolvedRedirect.params` contains the captured values and `destinationPath` already has them substituted in.
 
-> **Feature gate**: redirects and 404 logging are enabled **per site by a super admin** in the CMS dashboard (Super User → Sites). When a site has redirects disabled, those endpoints answer `403`, so `resolveRedirect` returns `null` and `fetchRedirects` returns `[]` — your middleware falls through to normal rendering. When 404 logging is disabled, `reportRedirect404` resolves to `null` and nothing is recorded. No code changes are needed on your side for either case.
+> **Feature gate**: redirects and 404 logging are enabled **per site by a super admin** in the CMS dashboard (Super User → Sites). When a site has redirects disabled, those endpoints answer `403`, and the SDK methods **throw** a `CmsError` with `status: 403`. `resolveRedirect` also throws a `CmsError` with `status: 404` when no redirect matches the path, which is the normal case for most requests. The examples below handle both: `orNull()` (see [Initialization](#2-initialization)) turns a 404 or 403 into `null`, so the middleware falls through to normal rendering, and the 404 logger swallows its rejection.
 
 ---
 
@@ -2258,7 +2338,7 @@ Use the shared CMS client singleton from `@/lib/cms` — do **not** create a new
 // middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -2280,7 +2360,9 @@ export async function middleware(request: NextRequest) {
       : pathname;
 
   try {
-    const resolution = await cms.resolveRedirect(SITE_ID, normalizedPath);
+    // No match (404) and redirects switched off (403) both resolve to null here;
+    // anything else is a real failure and lands in the catch below.
+    const resolution = await orNull(cms.resolveRedirect(SITE_ID, normalizedPath));
 
     if (resolution && resolution.redirect.enabled) {
       const { destinationPath, redirect } = resolution;
@@ -2321,7 +2403,7 @@ Use this when you want redirects baked in at build time (no runtime latency). Su
 ```ts
 // next.config.ts
 import type { NextConfig } from "next";
-import { createCmsClient } from "@crayons/cms-sdk";
+import { CmsError, createCmsClient } from "@crayonscodetech/cms-sdk";
 
 const cms = createCmsClient({
   baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL || "",
@@ -2331,10 +2413,17 @@ const SITE_ID = process.env.NEXT_PUBLIC_CMS_SITE_ID || "";
 
 const nextConfig: NextConfig = {
   async redirects() {
-    const redirects = await cms.fetchRedirects(SITE_ID);
+    let redirects: Awaited<ReturnType<typeof cms.fetchRedirects>> = [];
+    try {
+      redirects = await cms.fetchRedirects(SITE_ID);
+    } catch (error) {
+      // 403 = redirects are switched off for this site; build without them.
+      // Anything else should fail the build rather than ship without redirects.
+      if (!(error instanceof CmsError && error.status === 403)) throw error;
+    }
 
+    // fetchRedirects returns enabled redirects only
     return redirects
-      .filter((r) => r.enabled)
       .map((r) => ({
         source: r.source_path,
         destination: r.destination_path,
@@ -2383,14 +2472,13 @@ export default function NotFoundLogger() {
 
     window.__lastRedirect404Log = { path: pathname, timestamp: now };
 
-    void cms.reportRedirect404(
-      SITE_ID,
-      pathname,
-      document.referrer || undefined,
-      {
+    // Fire and forget. The call rejects when 404 logging is switched off for the
+    // site (403) or rate-limited (429); neither should surface to the visitor.
+    cms
+      .reportRedirect404(SITE_ID, pathname, document.referrer || undefined, {
         cache: "no-store",
-      },
-    );
+      })
+      .catch(() => {});
   }, []);
 
   return null;
@@ -2427,7 +2515,7 @@ Every `Page` returned by `fetchPageByUrl` or `fetchPages` includes an `seo` fiel
 ```tsx
 // app/[[...slug]]/page.tsx
 import type { Metadata } from "next";
-import { cms, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 
 interface Props {
   params: Promise<{ slug?: string[] }>;
@@ -2437,9 +2525,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const urlPath = slug ? `/${slug.join("/")}` : "/";
 
+  // Without orNull, an unknown URL would throw here and turn the 404 into a 500.
   const [page, siteConfig] = await Promise.all([
-    cms.fetchPageByUrl(SITE_ID, urlPath),
-    cms.fetchSiteConfig(SITE_ID),
+    orNull(cms.fetchPageByUrl(SITE_ID, urlPath)),
+    orNull(cms.fetchSiteConfig(SITE_ID)),
   ]);
 
   const siteName = siteConfig?.site_name ?? "";
@@ -2483,10 +2572,19 @@ For dedicated pages (blog detail, service detail, etc.) the pattern is the same 
 
 ```tsx
 // app/blog/[slug]/page.tsx
+import type { Metadata } from "next";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
+
+interface Props {
+  params: Promise<{ slug: string }>;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const blog = await cms.fetchBlogBySlug(SITE_ID, slug);
-  const siteConfig = await cms.fetchSiteConfig(SITE_ID);
+  const [blog, siteConfig] = await Promise.all([
+    orNull(cms.fetchBlogBySlug(SITE_ID, slug)),
+    orNull(cms.fetchSiteConfig(SITE_ID)),
+  ]);
   const siteName = siteConfig?.site_name ?? "";
 
   if (!blog) return { title: "Not Found" };
@@ -2635,18 +2733,27 @@ export interface PaginatedResponse<T> {
 }
 ```
 
-### Caching (Next.js)
+Public list endpoints cap `limit` (usually 20, 40 for product categories and brands), so a larger `limit` silently returns fewer items. Page with `{ page }`, or use `findInPages` (see [Initialization](#2-initialization)) to look an item up.
 
-All fetch methods accept `FetchOptions`:
+### Request Options (`FetchOptions`)
+
+Every method takes an optional last argument of type `FetchOptions`:
 
 ```typescript
 export interface FetchOptions extends RequestInit {
-  revalidate?: number; // Seconds to cache
-  tags?: string[]; // Cache tags for on-demand revalidation
+  revalidate?: number; // Seconds to cache (Next.js `fetch` cache)
+  tags?: string[]; // Cache tags for on-demand revalidation (Next.js)
+  retries?: number; // Extra attempts after a network error or a 502/503/504 (default 1)
 }
 ```
 
+- **Caching**: most methods set their own `revalidate` and `tags`, and those take precedence over the client's `defaultOptions`. To change caching for a call, pass `options` to that call. `revalidate` and `tags` only have an effect in Next.js; other runtimes ignore them.
+- **Retries**: a failed attempt is retried after 1 s, then 2 s. Errors other than 502/503/504 (a 404, for example) are not retried. `placeOrder` sends with `retries: 0` unless you pass `retries`, and `submitContactForm` never retries, so a slow response can't create a duplicate order or message. The generic `cms.fetch` retries whatever method you give it, so pass `retries: 0` for a `POST`.
+- **Errors**: see [Error Handling](#error-handling).
+
 ## API Reference
+
+Every method throws a `CmsError` when the request fails, including a `404` when a single item is not found (see [Error Handling](#error-handling)). Wrap single-item reads in `orNull()` where "not found" is a normal outcome.
 
 ### Global Configuration
 
@@ -2657,7 +2764,8 @@ export interface FetchOptions extends RequestInit {
 ### Pages
 
 - `fetchPages(siteId, params?, options?)`: Returns paginated page summaries (`10` items per backend page, no `sections`). Params: `{ page }`.
-- `fetchPageByUrl(siteId, urlPath, options?)`: Fetches a specific page directly by URL path.
+- `fetchPageByUrl(siteId, urlPath, options?)`: Fetches a specific page directly by URL path. Throws a `CmsError` with status `404` when no published page has that URL.
+- `fetchPageByType(siteId, pageType, options?)`: Fetches the site's single published page of a given `PageType` (for example `"home"` or `"blog"`), with its sections. Prefer it when you know which kind of page you want but not its URL, since editors can rename URLs. Throws a `CmsError` with status `404` when the site has no published page of that type.
 
 ### Blogs & Categories
 
@@ -2669,20 +2777,20 @@ export interface FetchOptions extends RequestInit {
 ### Other Entities
 
 - `fetchServices(siteId, params?, options?)`: Returns paginated services. Params: `{ page, limit }`. Only published services are returned — the backend filters on `is_published`, and each item carries `is_published` plus a nullable `published_at`.
-- `fetchServiceBySlug(siteId, slug, options?)`: Returns a single published service by slug, including its `extra.sections`. Returns `null` if not found or unpublished.
+- `fetchServiceBySlug(siteId, slug, options?)`: Returns a single published service by slug, including its `extra.sections`. Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchTeamMembers(siteId, params?, options?)`: Returns paginated team members. Params: `{ page, limit }`. Default limit: 20.
 - `fetchTeamMembersByCategory(siteId, params, options?)`: Returns paginated team members filtered by category. Params: `{ categoryId, page?, limit? }`. Default limit: 20. **Note:** `categoryId` is now inside the params object.
 - `fetchTestimonials(siteId, params?, options?)`: Returns paginated testimonials. Params: `{ type?, page?, limit? }`. Default limit: 20.
 - `fetchEvents(siteId, params?, options?)`: Returns paginated events. Params: `{ page, limit, search }`.
-- `fetchEventBySlug(siteId, slug, options?)`: Returns a single published event by slug. Returns `null` if not found or unpublished.
+- `fetchEventBySlug(siteId, slug, options?)`: Returns a single published event by slug. Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search }`.
 - `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. Default limit: 20.
 
 ### Redirects
 
-- `fetchRedirects(siteId, options?)`: Returns all enabled and disabled redirects. Use in `next.config.ts` for build-time static redirects.
-- `resolveRedirect(siteId, sourcePath, options?)`: Resolves a single path against CMS redirects. Returns `ResolvedRedirect` (with `destinationPath`, `params`, `type`) or `null`. Supports pattern redirects with captured params. Use in middleware.
-- `reportRedirect404(siteId, sourcePath, referrer?, options?)`: Logs a 404 hit to the CMS for redirect candidate tracking. Call fire-and-forget from `not-found.tsx`.
+- `fetchRedirects(siteId, options?)`: Returns the site's enabled redirects (disabled ones are not returned). Use in `next.config.ts` for build-time static redirects. Throws a `CmsError` with status `403` when redirects are switched off for the site.
+- `resolveRedirect(siteId, sourcePath, options?)`: Resolves a single path against CMS redirects. Returns a `ResolvedRedirect` (`redirect`, `destinationPath`, `params`, `type`). Throws a `CmsError` with status `404` when nothing matches and `403` when redirects are switched off, so wrap it in `orNull()`. Supports pattern redirects with captured params. Use in middleware.
+- `reportRedirect404(siteId, sourcePath, referrer?, options?)`: Logs a 404 hit to the CMS for redirect candidate tracking. Call fire-and-forget from `not-found.tsx`, with a `.catch()`: it rejects with `403` when 404 logging is switched off and `429` when rate-limited.
 
 ### FAQ & Help
 
@@ -2716,8 +2824,8 @@ export interface FetchOptions extends RequestInit {
   - **Attachments** (optional): `File[]`. Sending them switches the request to multipart.
     Caps, enforced server-side and pre-checked client-side: max 3 files, 3 MiB total, and a
     MIME allowlist (PDF, PNG, JPEG, WebP, GIF, plain text, DOC, DOCX).
-  - **Throws `CmsError` instead of returning `null`.** Unlike the read methods, a form needs
-    to distinguish rejection kinds, so failures throw with `error.status`:
+  - **Throws `CmsError` on failure**, like every method. Check `error.status` to tell
+    rejection kinds apart:
     `403` captcha failed (reset the widget — tokens are single-use), `429` rate limited,
     `400` validation, `503` Turnstile misconfigured server-side.
   - Never retried: a resend would duplicate the submission.
@@ -2909,15 +3017,16 @@ import type {
   Redirect,
   ResolvedRedirect,
   RedirectStatusCode,
-} from "@crayons/cms-sdk";
+} from "@crayonscodetech/cms-sdk";
 ```
 
 ### Browsing All Types After Installation
 
-After installing the package, the source files are not included. All exported types are compiled into a single declaration file:
+After installing the package, the source files are not included. All exported types are compiled into one declaration file per module format:
 
 ```
-node_modules/@crayons/cms-sdk/dist/index.d.ts
+node_modules/@crayonscodetech/cms-sdk/dist/index.d.mts   # ESM
+node_modules/@crayonscodetech/cms-sdk/dist/index.d.cts   # CommonJS
 ```
 
 Open that file to see every type, interface, and method signature the package exports. Your editor's "Go to Definition" (`F12` / `Cmd+Click`) on any imported type will also jump straight to it.
@@ -2935,43 +3044,92 @@ Open that file to see every type, interface, and method signature the package ex
 
 ### Rich Text / HTML Fields
 
-Several fields in the type definitions contain **HTML markup** produced by the CMS rich-text editor. These fields must be rendered with `dangerouslySetInnerHTML` (or a sanitizer such as DOMPurify) — never as plain text.
+Several fields contain **HTML markup** produced by the CMS rich-text editor. Render them as HTML, not as plain text, and **always sanitize them first**: anyone who can edit content in the CMS controls this HTML, and rendering it raw lets a stored `<script>` or `onerror=` handler run on your site.
 
-Each such field is annotated with `@remarks Rendered as HTML` in its type definition. Hover over the field in your IDE to see the annotation, or browse the source on GitHub (link above).
+DOMPurify needs a DOM, so it can't run during server rendering on Cloudflare Workers (and `isomorphic-dompurify` depends on jsdom). Use a sanitizer that works without one, such as [`xss`](https://www.npmjs.com/package/xss). The examples in this README render HTML fields through this component:
+
+```tsx
+// components/safe-html.tsx
+import { filterXSS } from "xss";
+
+/**
+ * Renders CMS rich-text HTML after sanitizing it. `filterXSS` needs no DOM, so this
+ * works in server components on Workers as well as in client components.
+ * Its default allowlist drops <script>, <iframe>, event handlers and javascript: URLs;
+ * pass a custom `whiteList` if you need to allow specific embeds.
+ */
+export default function SafeHtml({
+  html,
+  className,
+}: {
+  html: string | null | undefined;
+  className?: string;
+}) {
+  if (!html) return null;
+  return <div className={className} dangerouslySetInnerHTML={{ __html: filterXSS(html) }} />;
+}
+```
+
+Each HTML field is marked with a `// HTML (rich text)` comment in its type definition; hover over the field in your IDE, or browse the source on GitHub (link above).
 
 **Fields that contain HTML:**
 
-| Type                 | Field          | Notes                              |
-| -------------------- | -------------- | ---------------------------------- |
-| `HeroContent`        | `description`  | Hero slide body copy               |
-| `CustomContent`      | `card_content` | Main body of a custom card         |
-| `CustomContent`      | `subtitle`     | Secondary copy line (optional)     |
-| `CTAContent`         | `description`  | CTA section body copy              |
-| `MultiValueSection`  | `description`  | Section-level intro text           |
-| `MultiValueItem`     | `description`  | Per-item description               |
-| `RichContentSection` | `content`      | Full rich-text article body        |
-| `Faq`                | `answer`       | FAQ answer (supports lists, links) |
-| `Blog`               | `description`  | Full blog post body                |
-| `Service`            | `description`  | Full service detail body           |
-| `Event`              | `description`  | Full event detail body             |
+| Type                 | Field                                   |
+| -------------------- | --------------------------------------- |
+| `HeroContent`        | `description`                           |
+| `CustomContent`      | `card_content`, `subtitle`              |
+| `CTAContent`         | `description`                           |
+| `GenericSection`     | `subtitle`                              |
+| `MultiValueSection`  | `description`                           |
+| `MultiValueItem`     | `description`                           |
+| `HistoryItem`        | `description`                           |
+| `RichContentSection` | `content`                               |
+| `AboutUsData`        | `company_profile`, `vision`, `mission`  |
+| `Blog`               | `description`                           |
+| `Service`            | `description`                           |
+| `Event`              | `description`                           |
+| `Album`              | `description`                           |
+| `AlbumItem`          | `caption`                               |
+| `Category`           | `description`                           |
+| `TeamMember`         | `description`                           |
+| `Brand`              | `description`                           |
+| `BrandGroup`         | `description`                           |
+| `Faq`                | `answer`                                |
+| `FaqGroup`           | `description`                           |
+| `Product`            | `description`                           |
 
 ## Error Handling
 
-The SDK is designed to be "fail-safe" for UI components:
+Every method **throws a `CmsError`** when a request fails. The SDK does not log anything; handling and logging errors is up to your app.
 
-- **Single Assets**: Return `null` on failure.
-- **Lists**: Return `[]` (empty array) on failure.
-- **Paginated Lists**: Return an empty `PaginatedResponse` structure.
+- **Any non-2xx response throws**, a `404` for a missing item included. The single-item methods are typed `T | null`, but they only resolve to `null` for an empty (`204`) response.
+- **Network errors throw** a `CmsError` with no `status`, after the retries described in [Request Options](#request-options-fetchoptions).
+- **Paginated lists** resolve to a `PaginatedResponse` (`{ data, pagination }`), whose `data` may be empty. They never resolve to a bare array or `null`.
+- **Feature gates** answer `403`: store methods when the site's store is off, and redirect methods when redirects are off.
 
-Specific errors are logged to the console with the URL and status code. Transient server errors (502, 503, 504) are automatically retried up to 2 times with exponential backoff.
+Use `orNull()` from [Initialization](#2-initialization) where "not found" is a normal outcome. It turns `404` and `403` into `null` and rethrows everything else, so a real outage still reaches your error page instead of rendering an empty page:
+
+```tsx
+const blog = await orNull(cms.fetchBlogBySlug(SITE_ID, slug));
+if (!blog) notFound();
+```
 
 ### Custom Error Class
 
 ```typescript
-import { CmsError } from "@crayons/cms-sdk";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+
+try {
+  await cms.placeOrder(SITE_ID, payload);
+} catch (error) {
+  if (error instanceof CmsError && error.status === 400) {
+    // Validation message written by the CMS, safe to show the user
+    console.warn(error.message);
+  }
+}
 ```
 
-The `CmsError` class provides `status` and `url` properties for debugging.
+`CmsError` has `message` (the CMS's `message` field when the response had one), `status` (absent for network errors) and `url` (the full request URL, query string included, so avoid logging it where query strings may hold personal data).
 
 ## FAQ & Common Issues
 
@@ -2981,42 +3139,32 @@ This section addresses common questions and issues reported by developers.
 
 Many CMS fields (like `description`, `content`, `vision`, `mission`) contain HTML markup. If you render them as plain text, you will see raw tags.
 
-**Solution**: Use `dangerouslySetInnerHTML`.
+**Solution**: Render them through the `SafeHtml` component from [Rich Text / HTML Fields](#rich-text--html-fields), which sanitizes before rendering. Never pass a CMS field to `dangerouslySetInnerHTML` directly.
 
 ```tsx
-// Simple rendering
-<div
-  dangerouslySetInnerHTML={{ __html: blog.description }}
-  className="prose max-w-none"
-/>;
+import SafeHtml from "@/components/safe-html";
 
-// Recommended with Sanitization
-import DOMPurify from "isomorphic-dompurify";
-
-export function RichText({ content }: { content: string }) {
-  const cleanHtml = DOMPurify.sanitize(content);
-  return <div dangerouslySetInnerHTML={{ __html: cleanHtml }} />;
-}
+<SafeHtml html={blog.description} className="prose max-w-none" />;
 ```
 
 ### 2. Social Links as Raw URLs in Team Section (#8)
 
-The `socials` field in `TeamMember` returns an array of objects.
+The `socials` field in `TeamMember` is an array of `{ platform?, url? }` objects, where `platform` is free text such as `"LinkedIn"`.
 
-**Solution**: Use the built-in `Icon` component to map platforms to icons.
+**Solution**: Render each one as a labelled link. The SDK has no icon component, and `lucide-react` no longer ships brand logos, so map platform names to your own brand SVGs if you want logos.
 
 ```tsx
-import { Icon } from "@crayons/cms-sdk";
+import type { TeamMember } from "@crayonscodetech/cms-sdk";
 
 export function SocialLinks({ socials }: { socials: TeamMember["socials"] }) {
-  if (!socials) return null;
+  const links = (socials ?? []).filter((s) => s.url);
+  if (links.length === 0) return null;
 
   return (
     <div className="flex gap-4">
-      {socials.map((social, i) => (
-        <a key={i} href={social.url} target="_blank" rel="noopener noreferrer">
-          {/* Automatically handles "Facebook", "Twitter", "Linkedin", etc. */}
-          <Icon name={social.platform || "Link"} size={20} />
+      {links.map((social) => (
+        <a key={social.url} href={social.url} target="_blank" rel="noopener noreferrer">
+          {social.platform || "Link"}
         </a>
       ))}
     </div>
@@ -3032,27 +3180,28 @@ The `about` section type in the CMS refers to global "About Us" data (mission, v
 
 ```tsx
 // components/sections/about.tsx
-import { cms, SITE_ID } from "@/lib/cms";
-import { Icon } from "@crayons/cms-sdk";
-import type { AboutSection as AboutSectionType } from "@crayons/cms-sdk";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { CmsIcon } from "@/components/cms-icon"; // see "Icons" under Usage in Components
+import SafeHtml from "@/components/safe-html";
+import type { AboutSection as AboutSectionType } from "@crayonscodetech/cms-sdk";
 
 export async function AboutSection({ content }: { content: AboutSectionType }) {
-  const about = await cms.fetchAboutUs(SITE_ID);
+  const about = await orNull(cms.fetchAboutUs(SITE_ID));
 
   if (!about) return null;
 
   return (
     <section>
+      {content.section_heading && <p>{content.section_heading}</p>}
       <h2>{content.title || "About Us"}</h2>
-      {content.subtitle && <p>{content.subtitle}</p>}
 
-      <div dangerouslySetInnerHTML={{ __html: about.company_profile }} />
+      <SafeHtml html={about.company_profile} />
 
       <h3>Our Values</h3>
       <div className="grid">
         {about.values.map((v, i) => (
           <div key={i}>
-            <Icon name={v.icon} />
+            {v.icon && <CmsIcon name={v.icon} />}
             <h4>{v.title}</h4>
             <p>{v.description}</p>
           </div>
@@ -3084,16 +3233,16 @@ import Link from "next/link";
 
 ### 5. "How to see Types" (#4)
 
-You can view all available types by looking at the `index.d.ts` file in `node_modules/@crayons/cms-sdk/dist/index.d.ts`. Alternatively, you can browse the source types in the GitHub repository's `src/types` folder.
+You can view all available types in `node_modules/@crayonscodetech/cms-sdk/dist/index.d.mts` (or `index.d.cts` for CommonJS). Alternatively, you can browse the source types in the GitHub repository's `src/types` folder.
 
 **Solution**:
 
 1.  **Console Logging**: Since these are Server Components, logs will appear in your **terminal**, not the browser console.
     ```ts
-    const data = await fetchBlogs(siteId);
+    const data = await cms.fetchBlogs(SITE_ID);
     console.log("DEBUG BLOGS:", JSON.stringify(data, null, 2));
     ```
-2.  **Type Inspection**: Hover over any variable in VS Code to see its structure, or CMD+Click on the fetch method to jump to the `index.d.ts` definition.
+2.  **Type Inspection**: Hover over any variable in VS Code to see its structure, or CMD+Click on the fetch method to jump to its declaration.
 
 ### 6. My Images are broken (#4)
 
@@ -3116,13 +3265,16 @@ If `cms.fetch...` is failing with "Invalid URL", your `NEXT_PUBLIC_CMS_BASE_URL`
 
 ### 8. Handling Empty States
 
-The SDK returns `[]` for lists and `null` for single objects if data is missing or an error occurs.
+Paginated lists resolve to `{ data, pagination }`, and `data` is an empty array when there is nothing to show. Errors are not turned into empty values: a failed request throws a `CmsError` (see [Error Handling](#error-handling)).
 
-**Solution**: Always guard your components.
+**Solution**: Check `data.length`, and use `orNull()` for single items.
 
 ```tsx
-const services = await cms.fetchServices(SITE_ID);
-if (!services || services.length === 0) return <p>No services found.</p>;
+const { data: services } = await cms.fetchServices(SITE_ID);
+if (services.length === 0) return <p>No services found.</p>;
+
+const about = await orNull(cms.fetchAboutUs(SITE_ID));
+if (!about) return null;
 ```
 
 ---
@@ -3182,7 +3334,7 @@ The page component passes `page.sections` to `RenderSections` (or `SectionRender
 
 ### Step 7 — HTML fields are sanitized and rendered
 
-Some fields (`description`, `content`, `answer`, etc.) contain **HTML markup** from the CMS rich-text editor. These must be passed to `dangerouslySetInnerHTML` — always sanitize them with DOMPurify first. Fields that contain HTML are marked with a comment in their type definitions.
+Some fields (`description`, `content`, `answer`, etc.) contain **HTML markup** from the CMS rich-text editor. Render them through `SafeHtml` (see [Rich Text / HTML Fields](#rich-text--html-fields)), which sanitizes them with a DOM-free sanitizer so it also works during server rendering on Workers. Fields that contain HTML are marked with a `// HTML (rich text)` comment in their type definitions.
 
 ### Step 8 — Layout wraps everything
 
@@ -3200,5 +3352,5 @@ The root `layout.tsx` runs on every request independently of the catch-all. It c
 | 4    | Matched page data is passed to the right page component via a registry                   |
 | 5    | Page component fetches its own entity data (services, blogs, events, etc.)               |
 | 6    | `page.sections` is passed to `RenderSections`; data-driven sections fetch their own data |
-| 7    | Rich-text HTML fields are sanitized (DOMPurify) before rendering                         |
+| 7    | Rich-text HTML fields are sanitized (`SafeHtml`) before rendering                        |
 | 8    | Root layout independently fetches header, footer, and site config                        |
