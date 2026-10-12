@@ -421,6 +421,18 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
+  function fetchCategoryBySlug(
+    siteId: string,
+    slug: string,
+    options?: FetchOptions,
+  ): Promise<Category | null> {
+    return cmsFetch<Category>(`/api/public/cms/${siteId}/categories/${slug}`, {
+      revalidate: CACHE.MEDIUM,
+      tags: ["categories", "team", `category-${slug}`],
+      ...options,
+    });
+  }
+
   // ============================================================================
   // Team Members
   // ============================================================================
@@ -461,6 +473,18 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
+  function fetchTeamMemberBySlug(
+    siteId: string,
+    slug: string,
+    options?: FetchOptions,
+  ): Promise<TeamMember | null> {
+    return cmsFetch<TeamMember>(`/api/public/cms/${siteId}/team-members/${slug}`, {
+      revalidate: CACHE.MEDIUM,
+      tags: ["team", `team-member-${slug}`],
+      ...options,
+    });
+  }
+
   // ============================================================================
   // Albums
   // ============================================================================
@@ -479,6 +503,18 @@ export function createCmsClient(config: CmsClientConfig) {
         ...options,
       },
     );
+  }
+
+  function fetchAlbumBySlug(
+    siteId: string,
+    slug: string,
+    options?: FetchOptions,
+  ): Promise<Album | null> {
+    return cmsFetch<Album>(`/api/public/cms/${siteId}/albums/${slug}`, {
+      revalidate: CACHE.SHORT,
+      tags: ["albums", `album-${slug}`],
+      ...options,
+    });
   }
 
   function fetchAlbumItems(
@@ -526,6 +562,18 @@ export function createCmsClient(config: CmsClientConfig) {
         ...options,
       },
     );
+  }
+
+  function fetchBrandGroupBySlug(
+    siteId: string,
+    slug: string,
+    options?: FetchOptions,
+  ): Promise<BrandGroup | null> {
+    return cmsFetch<BrandGroup>(`/api/public/cms/${siteId}/brand-groups/${slug}`, {
+      revalidate: CACHE.MEDIUM,
+      tags: ["brand-groups", "brands", `brand-group-${slug}`],
+      ...options,
+    });
   }
 
   function fetchBrands(
@@ -1161,14 +1209,18 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchBlogById,
     // Categories
     fetchCategories,
+    fetchCategoryBySlug,
     // Team Members
     fetchTeamMembers,
     fetchTeamMembersByCategory,
+    fetchTeamMemberBySlug,
     // Albums
     fetchAlbums,
+    fetchAlbumBySlug,
     fetchAlbumItems,
     // Brands
     fetchBrandGroups,
+    fetchBrandGroupBySlug,
     fetchBrands,
     // Testimonials
     fetchTestimonials,

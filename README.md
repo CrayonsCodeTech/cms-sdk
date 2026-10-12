@@ -819,8 +819,8 @@ Different page types follow different rendering strategies. Understanding these 
 | `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`                             |
 | `/events/[slug]`        | `events`                          | `fetchEventBySlug(siteId, slug)`                                                                |
 | `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
-| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })`                   |
-| `/team/[slug]`          | `team-members`                    | `fetchTeamMembers(siteId)` (slug lookup) or custom `fetch`                                      |
+| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbumBySlug(siteId, slug)` + `fetchAlbumItems(siteId, { album: slug })`                   |
+| `/team/[slug]`          | `team-members`                    | `fetchTeamMemberBySlug(siteId, slug)`                                                           |
 | `/contact`              | `contact` (form submissions)      | `fetchContactConfig(siteId)` + `submitContactForm(siteId, payload, attachments?)`               |
 
 ### Home Page — Section Rendering with Targeting
@@ -2773,6 +2773,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 - `fetchBlogBySlug(siteId, slug, options?)`: Returns a single blog post by slug.
 - `fetchBlogById(siteId, idOrSlug, options?)`: Backwards-compatible alias (internally resolves via slug route).
 - `fetchCategories(siteId, params?, options?)`: Returns paginated team categories. Params: `{ page, limit }`. Default limit: 20.
+- `fetchCategoryBySlug(siteId, slug, options?)`: Returns a single team category by slug, including its `extra.sections` and its published `members` (ordered). Throws a `CmsError` with status `404` if not found.
 
 ### Other Entities
 
@@ -2780,10 +2781,12 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 - `fetchServiceBySlug(siteId, slug, options?)`: Returns a single published service by slug, including its `extra.sections`. Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchTeamMembers(siteId, params?, options?)`: Returns paginated team members. Params: `{ page, limit }`. Default limit: 20.
 - `fetchTeamMembersByCategory(siteId, params, options?)`: Returns paginated team members filtered by category. Params: `{ categoryId, page?, limit? }`. Default limit: 20. **Note:** `categoryId` is now inside the params object.
+- `fetchTeamMemberBySlug(siteId, slug, options?)`: Returns a single published team member by slug. Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchTestimonials(siteId, params?, options?)`: Returns paginated testimonials. Params: `{ type?, page?, limit? }`. Default limit: 20.
 - `fetchEvents(siteId, params?, options?)`: Returns paginated events. Params: `{ page, limit, search }`.
 - `fetchEventBySlug(siteId, slug, options?)`: Returns a single published event by slug. Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search }`.
+- `fetchAlbumBySlug(siteId, slug, options?)`: Returns a single published album by slug, including its `extra.sections` (not its photos; use `fetchAlbumItems` with `{ album: slug }`). Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. Default limit: 20.
 
 ### Redirects
@@ -2795,6 +2798,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 ### FAQ & Help
 
 - `fetchBrandGroups(siteId, params?, options?)`: Returns paginated published brand groups. Params: `{ page?, limit? }`. Default limit: 20.
+- `fetchBrandGroupBySlug(siteId, slug, options?)`: Returns a single published brand group by slug, including its `extra.sections` and its `brands` (ordered). Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchBrands(siteId, params, options?)`: Returns paginated brands, optionally filtered by group. Params: `{ group?, group_id?, page?, limit? }`. Default limit: 20.
 - `fetchFaqGroups(siteId, params?, options?)`: Returns paginated FAQ groups with their nested FAQs. Params: `{ page?, limit? }`. Default limit: 20.
 - `fetchFaqs(siteId, params?, options?)`: Returns paginated flat list of FAQs. Params: `{ group_id?, page?, limit? }`. Default limit: 20.
