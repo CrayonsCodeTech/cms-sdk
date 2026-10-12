@@ -662,7 +662,7 @@ Several section types only carry **display text** (headings, subtitles) in `sect
 | Team             | `"team"`             | `TeamSection`            | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, { categoryId: content.team_category_id })`               |
 | FAQ              | `"faq"`              | `FaqSection`             | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`                                           |
 | Clients / Brands | `"clients"`          | `ClientsSection`         | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`                                  |
-| Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
+| Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbums(siteId, { ids })` + `fetchAlbumItems(siteId, { album_id })` as needed            |
 | Events           | `"event"`            | `GenericSection`         | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
 | Blog             | `"blog"`             | `GenericSection`         | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
 | Products         | `"products"`         | `ProductsSection`        | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter`     |
@@ -741,13 +741,13 @@ export async function TeamSection({ content }: { content: TeamSection }) {
                 {member.socials.map(
                   (s) =>
                     s.url && (
-                      <li key={s.platform}>
+                      <li key={s.url}>
                         <a
                           href={s.url}
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          {s.platform}
+                          {s.site_name}
                         </a>
                       </li>
                     ),
@@ -2785,7 +2785,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 - `fetchTestimonials(siteId, params?, options?)`: Returns paginated testimonials. Params: `{ type?, page?, limit? }`. Default limit: 20.
 - `fetchEvents(siteId, params?, options?)`: Returns paginated events. Params: `{ page, limit, search }`.
 - `fetchEventBySlug(siteId, slug, options?)`: Returns a single published event by slug. Throws a `CmsError` with status `404` if not found or unpublished.
-- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search }`.
+- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search, ids }`. `ids` (array or comma-separated) returns only those albums — use it for an `album-group` section's `album_ids` instead of fetching every album.
 - `fetchAlbumBySlug(siteId, slug, options?)`: Returns a single published album by slug, including its `extra.sections` (not its photos; use `fetchAlbumItems` with `{ album: slug }`). Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. Default limit: 20.
 
@@ -2853,12 +2853,12 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 - `fetchStoreSettings(siteId, options?)`: Returns `{ currency, price_visibility, is_store_enabled }`. Fetch this first — public endpoints never return `cost_price`, and when `price_visibility` is false the API also strips `price` and `sale_price` from every variant, so the storefront must render an inquiry flow rather than prices.
 - `fetchProductCategories(siteId, params?, options?)`: Returns paginated product categories. Params: `{ page, limit, search, ordering, parent_id }`.
 - `fetchProductBrands(siteId, params?, options?)`: Returns paginated product brands. Params: `{ page, limit, search, ordering }`.
-- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`.
+- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`. `category_id` and `brand_id` accept several ids (array or comma-separated) and match any of them; `category_id` also includes each category's subcategories.
   - `category_id` is hierarchy-aware on the backend and includes child/grandchild categories.
-- `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**.
+- `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**, `tags`, and its `category` and `brand` as `{ id, name, slug }` (or `null`), so there is no need to fetch the category or brand lists to show their names.
 - `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, no products). Params: `{ page, limit, search, id }`. The `id` parameter accepts a comma-separated string of collection IDs (e.g., `"id1,id2"`) to filter the results.
 - `fetchCollectionDetail(siteId, slug, params?, options?)`: Returns a single collection **with full `items` array** (products + variants included).
-  - Params: `{ page, limit, category_id }`
+  - Params: `{ page, limit, category_id }` (`category_id` accepts several ids, array or comma-separated)
   - Works for both manual and smart collections
 - `fetchCollectionDetailById(siteId, id, params?, options?)`: Same as `fetchCollectionDetail`, but keyed by collection ID for CMS-driven product sections.
 - `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag. Params: `{ page, limit }`.
@@ -3153,9 +3153,9 @@ import SafeHtml from "@/components/safe-html";
 
 ### 2. Social Links as Raw URLs in Team Section (#8)
 
-The `socials` field in `TeamMember` is an array of `{ platform?, url? }` objects, where `platform` is free text such as `"LinkedIn"`.
+The `socials` field in `TeamMember` is an array of `{ site_name, url }` objects, where `site_name` is free text such as `"LinkedIn"`. (Older SDK versions typed this as `platform`; the API has never sent that key.)
 
-**Solution**: Render each one as a labelled link. The SDK has no icon component, and `lucide-react` no longer ships brand logos, so map platform names to your own brand SVGs if you want logos.
+**Solution**: Render each one as a labelled link. The SDK has no icon component, and `lucide-react` no longer ships brand logos, so map `site_name` values to your own brand SVGs if you want logos.
 
 ```tsx
 import type { TeamMember } from "@crayonscodetech/cms-sdk";
@@ -3168,7 +3168,7 @@ export function SocialLinks({ socials }: { socials: TeamMember["socials"] }) {
     <div className="flex gap-4">
       {links.map((social) => (
         <a key={social.url} href={social.url} target="_blank" rel="noopener noreferrer">
-          {social.platform || "Link"}
+          {social.site_name || "Link"}
         </a>
       ))}
     </div>

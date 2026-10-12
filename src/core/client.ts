@@ -212,6 +212,12 @@ export function createCmsClient(config: CmsClientConfig) {
     return query.toString();
   }
 
+  // Multi-value filters are sent comma-separated (`?brand_id=a,b`), which is
+  // what the backend parses; buildQueryString would repeat the key instead.
+  function joinIds(value: string | string[] | undefined): string | undefined {
+    return Array.isArray(value) ? value.join(",") : value;
+  }
+
   // Default page size for list endpoints (categories, team, brands, testimonials,
   // faq-groups, faqs). Matches the backend's getPaginationParamsWithoutLimit(c, 20).
   // Album-items is NOT one of these: it uses getPaginationParams(c, 100), so its
@@ -491,10 +497,16 @@ export function createCmsClient(config: CmsClientConfig) {
 
   function fetchAlbums(
     siteId: string,
-    params: { page?: number; limit?: number; search?: string } = {},
+    params: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      /** Only these albums (array or comma-separated ids), e.g. for an album-group section. */
+      ids?: string | string[];
+    } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<Album>> {
-    const query = buildQueryString(params);
+    const query = buildQueryString({ ...params, ids: joinIds(params.ids) });
     return cmsFetchPaginated<Album>(
       `/api/public/cms/${siteId}/albums/?${query}`,
       {
@@ -937,9 +949,11 @@ export function createCmsClient(config: CmsClientConfig) {
       page?: number;
       limit?: number;
       search?: string;
-      category_id?: string;
+      /** One id, or several (array or comma-separated); includes subcategories. */
+      category_id?: string | string[];
       tag_id?: string;
-      brand_id?: string;
+      /** One id, or several (array or comma-separated). */
+      brand_id?: string | string[];
       is_featured?: "true" | "false";
       sort?: "price_asc" | "price_desc";
       min_price?: number;
@@ -948,7 +962,11 @@ export function createCmsClient(config: CmsClientConfig) {
     } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<ProductListItem>> {
-    const query = buildQueryString(params);
+    const query = buildQueryString({
+      ...params,
+      category_id: joinIds(params.category_id),
+      brand_id: joinIds(params.brand_id),
+    });
     return cmsFetchPaginated<ProductListItem>(
       `/api/public/store/${siteId}/products/?${query}`,
       {
@@ -1016,13 +1034,14 @@ export function createCmsClient(config: CmsClientConfig) {
     params: {
       page?: number;
       limit?: number;
-      category_id?: string;
+      /** One id, or several (array or comma-separated); includes subcategories. */
+      category_id?: string | string[];
       sort?: "name_asc" | "name_desc";
       availability?: "in_stock" | "out_of_stock";
     } = {},
     options?: FetchOptions,
   ): Promise<CollectionDetail | null> {
-    const query = buildQueryString(params);
+    const query = buildQueryString({ ...params, category_id: joinIds(params.category_id) });
     return cmsFetch<CollectionDetail>(
       `/api/public/store/${siteId}/collections/${slug}/${
         query ? `?${query}` : ""
@@ -1041,13 +1060,14 @@ export function createCmsClient(config: CmsClientConfig) {
     params: {
       page?: number;
       limit?: number;
-      category_id?: string;
+      /** One id, or several (array or comma-separated); includes subcategories. */
+      category_id?: string | string[];
       sort?: "name_asc" | "name_desc";
       availability?: "in_stock" | "out_of_stock";
     } = {},
     options?: FetchOptions,
   ): Promise<CollectionDetail | null> {
-    const query = buildQueryString(params);
+    const query = buildQueryString({ ...params, category_id: joinIds(params.category_id) });
     return cmsFetch<CollectionDetail>(
       `/api/public/store/${siteId}/collections/id/${id}/${
         query ? `?${query}` : ""
