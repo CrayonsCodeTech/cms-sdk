@@ -994,9 +994,9 @@ export function createCmsClient(config: CmsClientConfig) {
     tag: string,
     params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<PaginatedResponse<{ item: unknown; product: Product }> | null> {
+  ): Promise<PaginatedResponse<{ item: unknown; product: Product }>> {
     const query = buildQueryString({ tag, ...params });
-    return cmsFetch<PaginatedResponse<{ item: unknown; product: Product }>>(
+    return cmsFetchPaginated<{ item: unknown; product: Product }>(
       `/api/public/store/${siteId}/products/by-tag/${query ? `?${query}` : ""}`,
       {
         revalidate: CACHE.SHORT,
