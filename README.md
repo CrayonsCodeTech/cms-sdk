@@ -2861,7 +2861,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
   - Params: `{ page, limit, category_id }` (`category_id` accepts several ids, array or comma-separated)
   - Works for both manual and smart collections
 - `fetchCollectionDetailById(siteId, id, params?, options?)`: Same as `fetchCollectionDetail`, but keyed by collection ID for CMS-driven product sections.
-- `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag, matched by tag **name** (not id). Each entry is `{ item, product }`. Params: `{ page, limit }`. To filter by tag id, as CMS product sections store it, use `fetchProducts(siteId, { tag_id })`.
+- `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag, matched by tag **slug** (not name or id). Each entry is `{ item, product }`. Params: `{ page, limit }`. To filter by tag id, as CMS product sections store it, use `fetchProducts(siteId, { tag_id })`.
 - `placeOrder(siteId, payload, options?)`: Places an order. Call from a server API route — never client-side.
   - `metadata` on the payload must be a **flat `Record<string, string>`** — the API validates it on a strict schema, so nested objects, numbers and arrays are rejected with a 400.
 
