@@ -120,7 +120,7 @@ export async function orNull<T>(request: Promise<T | null>): Promise<T | null> {
 
 /**
  * Pages through a list method until an item matches. Use it where the API has
- * no by-slug lookup (albums, product categories, product brands); public list
+ * no by-slug lookup; public list
  * endpoints return at most 20–40 items per page, so a single page can miss it.
  */
 export async function findInPages<T>(
@@ -1834,13 +1834,13 @@ export default async function ProductCategoriesPage() {
 
 ```tsx
 // components/pages/CategoryProductsPage.tsx
-import { cms, findInPages, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string; search?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }
 
 export default async function CategoryProductsPage({
@@ -1848,22 +1848,14 @@ export default async function CategoryProductsPage({
   searchParams,
 }: Props) {
   const { slug } = await params;
-  const { page = "1", search } = await searchParams;
+  const { page = "1" } = await searchParams;
 
-  // Resolve category_id from slug. There is no by-slug lookup and the list is
-  // paginated, so page through it rather than searching only the first page.
-  const category = await findInPages(
-    (p) => cms.fetchProductCategories(SITE_ID, { page: p, limit: 40 }),
-    (c) => c.slug === slug,
+  // One call: the category plus a page of its products, like fetchCollectionDetail
+  const category = await orNull(
+    cms.fetchProductCategoryBySlug(SITE_ID, slug, { page: Number(page), limit: 12 }),
   );
   if (!category) notFound();
-
-  const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
-    category_id: category.id,
-    page: Number(page),
-    limit: 12,
-    search,
-  });
+  const products = category.items.map((item) => item.product);
 
   return (
     <div>
@@ -1916,13 +1908,13 @@ export default async function BrandsPage() {
 
 ```tsx
 // components/pages/BrandProductsPage.tsx
-import { cms, findInPages, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string; search?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }
 
 export default async function BrandProductsPage({
@@ -1930,21 +1922,14 @@ export default async function BrandProductsPage({
   searchParams,
 }: Props) {
   const { slug } = await params;
-  const { page = "1", search } = await searchParams;
+  const { page = "1" } = await searchParams;
 
-  // No by-slug lookup and at most 40 brands per page: page through the list.
-  const brand = await findInPages(
-    (p) => cms.fetchProductBrands(SITE_ID, { page: p, limit: 40 }),
-    (b) => b.slug === slug,
+  // One call: the brand plus a page of its products, like fetchCollectionDetail
+  const brand = await orNull(
+    cms.fetchProductBrandBySlug(SITE_ID, slug, { page: Number(page), limit: 12 }),
   );
   if (!brand) notFound();
-
-  const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
-    brand_id: brand.id,
-    page: Number(page),
-    limit: 12,
-    search,
-  });
+  const products = brand.items.map((item) => item.product);
 
   return (
     <div>
@@ -2852,11 +2837,13 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 
 - `fetchStoreSettings(siteId, options?)`: Returns `{ currency, price_visibility, is_store_enabled }`. Fetch this first — public endpoints never return `cost_price`, and when `price_visibility` is false the API also strips `price` and `sale_price` from every variant, so the storefront must render an inquiry flow rather than prices.
 - `fetchProductCategories(siteId, params?, options?)`: Returns paginated product categories. Params: `{ page, limit, search, ordering, parent_id }`.
+- `fetchProductCategoryBySlug(siteId, slug, params?, options?)`: Returns a single product category by slug **with a page of its published products** (subcategories included), shaped like `fetchCollectionDetail`: the category's fields plus `items` (`{ product }`) and `pagination`. Params: `{ page, limit, sort, availability }` (`limit` max 20).
 - `fetchProductBrands(siteId, params?, options?)`: Returns paginated product brands. Params: `{ page, limit, search, ordering }`.
+- `fetchProductBrandBySlug(siteId, slug, params?, options?)`: Returns a single product brand by slug **with a page of its published products**, shaped like `fetchCollectionDetail`: the brand's fields plus `items` (`{ product }`) and `pagination`. Params: `{ page, limit, category_id, sort, availability }` (`limit` max 20).
 - `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`. `category_id` and `brand_id` accept several ids (array or comma-separated) and match any of them; `category_id` also includes each category's subcategories.
   - `category_id` is hierarchy-aware on the backend and includes child/grandchild categories.
 - `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**, `tags`, and its `category` and `brand` as `{ id, name, slug }` (or `null`), so there is no need to fetch the category or brand lists to show their names.
-- `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, no products). Params: `{ page, limit, search, id }`. The `id` parameter accepts a comma-separated string of collection IDs (e.g., `"id1,id2"`) to filter the results.
+- `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, the number of published products, no products). Params: `{ page, limit, search, id }`. The `id` parameter accepts a comma-separated string of collection IDs (e.g., `"id1,id2"`) to filter the results.
 - `fetchCollectionDetail(siteId, slug, params?, options?)`: Returns a single collection **with full `items` array** (products + variants included).
   - Params: `{ page, limit, category_id }` (`category_id` accepts several ids, array or comma-separated)
   - Works for both manual and smart collections

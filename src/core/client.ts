@@ -28,8 +28,8 @@ import {
   CONTACT_ATTACHMENT_MIME_ALLOWLIST,
 } from "../types/contact";
 import type { Product, ProductListItem } from "../types/product";
-import type { ProductCategory } from "../types/product-category";
-import type { ProductBrand } from "../types/product-brand";
+import type { ProductCategory, ProductCategoryDetail } from "../types/product-category";
+import type { ProductBrand, ProductBrandDetail } from "../types/product-brand";
 import type { Collection, CollectionDetail } from "../types/collection";
 import type { Order, PlaceOrderPayload } from "../types/order";
 import type { StoreSettings } from "../types/store-setting";
@@ -922,6 +922,28 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
+  function fetchProductCategoryBySlug(
+    siteId: string,
+    slug: string,
+    params: {
+      page?: number;
+      limit?: number;
+      sort?: "name_asc" | "name_desc";
+      availability?: "in_stock" | "out_of_stock";
+    } = {},
+    options?: FetchOptions,
+  ): Promise<ProductCategoryDetail | null> {
+    const query = buildQueryString(params);
+    return cmsFetch<ProductCategoryDetail>(
+      `/api/public/store/${siteId}/categories/${slug}/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["products", "product-categories", `product-category-${slug}`],
+        ...options,
+      },
+    );
+  }
+
   function fetchProductBrands(
     siteId: string,
     params: {
@@ -938,6 +960,30 @@ export function createCmsClient(config: CmsClientConfig) {
       {
         revalidate: CACHE.SHORT,
         tags: ["product-brands"],
+        ...options,
+      },
+    );
+  }
+
+  function fetchProductBrandBySlug(
+    siteId: string,
+    slug: string,
+    params: {
+      page?: number;
+      limit?: number;
+      /** One id, or several (array or comma-separated); includes subcategories. */
+      category_id?: string | string[];
+      sort?: "name_asc" | "name_desc";
+      availability?: "in_stock" | "out_of_stock";
+    } = {},
+    options?: FetchOptions,
+  ): Promise<ProductBrandDetail | null> {
+    const query = buildQueryString({ ...params, category_id: joinIds(params.category_id) });
+    return cmsFetch<ProductBrandDetail>(
+      `/api/public/store/${siteId}/brands/${slug}/${query ? `?${query}` : ""}`,
+      {
+        revalidate: CACHE.SHORT,
+        tags: ["products", "product-brands", `product-brand-${slug}`],
         ...options,
       },
     );
@@ -1261,6 +1307,8 @@ export function createCmsClient(config: CmsClientConfig) {
     fetchStoreSettings,
     fetchProductCategories,
     fetchProductBrands,
+    fetchProductBrandBySlug,
+    fetchProductCategoryBySlug,
     fetchProducts,
     fetchProductDetail,
     fetchProductsByTag,
