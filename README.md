@@ -120,7 +120,7 @@ export async function orNull<T>(request: Promise<T | null>): Promise<T | null> {
 
 /**
  * Pages through a list method until an item matches. Use it where the API has
- * no by-slug lookup (albums, product categories, product brands); public list
+ * no by-slug lookup; public list
  * endpoints return at most 20–40 items per page, so a single page can miss it.
  */
 export async function findInPages<T>(
@@ -662,7 +662,7 @@ Several section types only carry **display text** (headings, subtitles) in `sect
 | Team             | `"team"`             | `TeamSection`            | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, { categoryId: content.team_category_id })`               |
 | FAQ              | `"faq"`              | `FaqSection`             | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`                                           |
 | Clients / Brands | `"clients"`          | `ClientsSection`         | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`                                  |
-| Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbums(siteId)` + `fetchAlbumItems(siteId, { album_id })` as needed                   |
+| Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbums(siteId, { ids })` + `fetchAlbumItems(siteId, { album_id })` as needed            |
 | Events           | `"event"`            | `GenericSection`         | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
 | Blog             | `"blog"`             | `GenericSection`         | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
 | Products         | `"products"`         | `ProductsSection`        | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter`     |
@@ -741,13 +741,13 @@ export async function TeamSection({ content }: { content: TeamSection }) {
                 {member.socials.map(
                   (s) =>
                     s.url && (
-                      <li key={s.platform}>
+                      <li key={s.url}>
                         <a
                           href={s.url}
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          {s.platform}
+                          {s.site_name}
                         </a>
                       </li>
                     ),
@@ -819,8 +819,8 @@ Different page types follow different rendering strategies. Understanding these 
 | `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`                             |
 | `/events/[slug]`        | `events`                          | `fetchEventBySlug(siteId, slug)`                                                                |
 | `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
-| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbums(siteId, { limit })` + `fetchAlbumItems(siteId, { album: slug })`                   |
-| `/team/[slug]`          | `team-members`                    | `fetchTeamMembers(siteId)` (slug lookup) or custom `fetch`                                      |
+| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbumBySlug(siteId, slug)` + `fetchAlbumItems(siteId, { album: slug })`                   |
+| `/team/[slug]`          | `team-members`                    | `fetchTeamMemberBySlug(siteId, slug)`                                                           |
 | `/contact`              | `contact` (form submissions)      | `fetchContactConfig(siteId)` + `submitContactForm(siteId, payload, attachments?)`               |
 
 ### Home Page — Section Rendering with Targeting
@@ -1834,13 +1834,13 @@ export default async function ProductCategoriesPage() {
 
 ```tsx
 // components/pages/CategoryProductsPage.tsx
-import { cms, findInPages, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string; search?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }
 
 export default async function CategoryProductsPage({
@@ -1848,22 +1848,14 @@ export default async function CategoryProductsPage({
   searchParams,
 }: Props) {
   const { slug } = await params;
-  const { page = "1", search } = await searchParams;
+  const { page = "1" } = await searchParams;
 
-  // Resolve category_id from slug. There is no by-slug lookup and the list is
-  // paginated, so page through it rather than searching only the first page.
-  const category = await findInPages(
-    (p) => cms.fetchProductCategories(SITE_ID, { page: p, limit: 40 }),
-    (c) => c.slug === slug,
+  // One call: the category plus a page of its products, like fetchCollectionDetail
+  const category = await orNull(
+    cms.fetchProductCategoryBySlug(SITE_ID, slug, { page: Number(page), limit: 12 }),
   );
   if (!category) notFound();
-
-  const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
-    category_id: category.id,
-    page: Number(page),
-    limit: 12,
-    search,
-  });
+  const products = category.items.map((item) => item.product);
 
   return (
     <div>
@@ -1916,13 +1908,13 @@ export default async function BrandsPage() {
 
 ```tsx
 // components/pages/BrandProductsPage.tsx
-import { cms, findInPages, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string; search?: string }>;
+  searchParams: Promise<{ page?: string }>;
 }
 
 export default async function BrandProductsPage({
@@ -1930,21 +1922,14 @@ export default async function BrandProductsPage({
   searchParams,
 }: Props) {
   const { slug } = await params;
-  const { page = "1", search } = await searchParams;
+  const { page = "1" } = await searchParams;
 
-  // No by-slug lookup and at most 40 brands per page: page through the list.
-  const brand = await findInPages(
-    (p) => cms.fetchProductBrands(SITE_ID, { page: p, limit: 40 }),
-    (b) => b.slug === slug,
+  // One call: the brand plus a page of its products, like fetchCollectionDetail
+  const brand = await orNull(
+    cms.fetchProductBrandBySlug(SITE_ID, slug, { page: Number(page), limit: 12 }),
   );
   if (!brand) notFound();
-
-  const { data: products, pagination } = await cms.fetchProducts(SITE_ID, {
-    brand_id: brand.id,
-    page: Number(page),
-    limit: 12,
-    search,
-  });
+  const products = brand.items.map((item) => item.product);
 
   return (
     <div>
@@ -2773,6 +2758,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 - `fetchBlogBySlug(siteId, slug, options?)`: Returns a single blog post by slug.
 - `fetchBlogById(siteId, idOrSlug, options?)`: Backwards-compatible alias (internally resolves via slug route).
 - `fetchCategories(siteId, params?, options?)`: Returns paginated team categories. Params: `{ page, limit }`. Default limit: 20.
+- `fetchCategoryBySlug(siteId, slug, options?)`: Returns a single team category by slug, including its `extra.sections` and its published `members` (ordered). Throws a `CmsError` with status `404` if not found.
 
 ### Other Entities
 
@@ -2780,10 +2766,12 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 - `fetchServiceBySlug(siteId, slug, options?)`: Returns a single published service by slug, including its `extra.sections`. Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchTeamMembers(siteId, params?, options?)`: Returns paginated team members. Params: `{ page, limit }`. Default limit: 20.
 - `fetchTeamMembersByCategory(siteId, params, options?)`: Returns paginated team members filtered by category. Params: `{ categoryId, page?, limit? }`. Default limit: 20. **Note:** `categoryId` is now inside the params object.
+- `fetchTeamMemberBySlug(siteId, slug, options?)`: Returns a single published team member by slug. Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchTestimonials(siteId, params?, options?)`: Returns paginated testimonials. Params: `{ type?, page?, limit? }`. Default limit: 20.
 - `fetchEvents(siteId, params?, options?)`: Returns paginated events. Params: `{ page, limit, search }`.
 - `fetchEventBySlug(siteId, slug, options?)`: Returns a single published event by slug. Throws a `CmsError` with status `404` if not found or unpublished.
-- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search }`.
+- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search, ids }`. `ids` (array or comma-separated) returns only those albums — use it for an `album-group` section's `album_ids` instead of fetching every album.
+- `fetchAlbumBySlug(siteId, slug, options?)`: Returns a single published album by slug, including its `extra.sections` (not its photos; use `fetchAlbumItems` with `{ album: slug }`). Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. Default limit: 20.
 
 ### Redirects
@@ -2795,6 +2783,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 ### FAQ & Help
 
 - `fetchBrandGroups(siteId, params?, options?)`: Returns paginated published brand groups. Params: `{ page?, limit? }`. Default limit: 20.
+- `fetchBrandGroupBySlug(siteId, slug, options?)`: Returns a single published brand group by slug, including its `extra.sections` and its `brands` (ordered). Throws a `CmsError` with status `404` if not found or unpublished.
 - `fetchBrands(siteId, params, options?)`: Returns paginated brands, optionally filtered by group. Params: `{ group?, group_id?, page?, limit? }`. Default limit: 20.
 - `fetchFaqGroups(siteId, params?, options?)`: Returns paginated FAQ groups with their nested FAQs. Params: `{ page?, limit? }`. Default limit: 20.
 - `fetchFaqs(siteId, params?, options?)`: Returns paginated flat list of FAQs. Params: `{ group_id?, page?, limit? }`. Default limit: 20.
@@ -2848,16 +2837,18 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 
 - `fetchStoreSettings(siteId, options?)`: Returns `{ currency, price_visibility, is_store_enabled }`. Fetch this first — public endpoints never return `cost_price`, and when `price_visibility` is false the API also strips `price` and `sale_price` from every variant, so the storefront must render an inquiry flow rather than prices.
 - `fetchProductCategories(siteId, params?, options?)`: Returns paginated product categories. Params: `{ page, limit, search, ordering, parent_id }`.
+- `fetchProductCategoryBySlug(siteId, slug, params?, options?)`: Returns a single product category by slug **with a page of its published products** (subcategories included), shaped like `fetchCollectionDetail`: the category's fields plus `items` (`{ product }`) and `pagination`. Params: `{ page, limit, sort, availability }` (`limit` max 20).
 - `fetchProductBrands(siteId, params?, options?)`: Returns paginated product brands. Params: `{ page, limit, search, ordering }`.
-- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`.
+- `fetchProductBrandBySlug(siteId, slug, params?, options?)`: Returns a single product brand by slug **with a page of its published products**, shaped like `fetchCollectionDetail`: the brand's fields plus `items` (`{ product }`) and `pagination`. Params: `{ page, limit, category_id, sort, availability }` (`limit` max 20).
+- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`. `category_id` and `brand_id` accept several ids (array or comma-separated) and match any of them; `category_id` also includes each category's subcategories.
   - `category_id` is hierarchy-aware on the backend and includes child/grandchild categories.
-- `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**.
-- `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, no products). Params: `{ page, limit, search, id }`. The `id` parameter accepts a comma-separated string of collection IDs (e.g., `"id1,id2"`) to filter the results.
+- `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**, `tags`, and its `category` and `brand` as `{ id, name, slug }` (or `null`), so there is no need to fetch the category or brand lists to show their names.
+- `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, the number of published products, no products). Params: `{ page, limit, search, id }`. The `id` parameter accepts a comma-separated string of collection IDs (e.g., `"id1,id2"`) to filter the results.
 - `fetchCollectionDetail(siteId, slug, params?, options?)`: Returns a single collection **with full `items` array** (products + variants included).
-  - Params: `{ page, limit, category_id }`
+  - Params: `{ page, limit, category_id }` (`category_id` accepts several ids, array or comma-separated)
   - Works for both manual and smart collections
 - `fetchCollectionDetailById(siteId, id, params?, options?)`: Same as `fetchCollectionDetail`, but keyed by collection ID for CMS-driven product sections.
-- `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag. Params: `{ page, limit }`.
+- `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag, matched by tag **slug** (not name or id). Each entry is `{ item, product }`. Params: `{ page, limit }`. To filter by tag id, as CMS product sections store it, use `fetchProducts(siteId, { tag_id })`.
 - `placeOrder(siteId, payload, options?)`: Places an order. Call from a server API route — never client-side.
   - `metadata` on the payload must be a **flat `Record<string, string>`** — the API validates it on a strict schema, so nested objects, numbers and arrays are rejected with a 400.
 
@@ -3149,9 +3140,9 @@ import SafeHtml from "@/components/safe-html";
 
 ### 2. Social Links as Raw URLs in Team Section (#8)
 
-The `socials` field in `TeamMember` is an array of `{ platform?, url? }` objects, where `platform` is free text such as `"LinkedIn"`.
+The `socials` field in `TeamMember` is an array of `{ site_name, url }` objects, where `site_name` is free text such as `"LinkedIn"`. (Older SDK versions typed this as `platform`; the API has never sent that key.)
 
-**Solution**: Render each one as a labelled link. The SDK has no icon component, and `lucide-react` no longer ships brand logos, so map platform names to your own brand SVGs if you want logos.
+**Solution**: Render each one as a labelled link. The SDK has no icon component, and `lucide-react` no longer ships brand logos, so map `site_name` values to your own brand SVGs if you want logos.
 
 ```tsx
 import type { TeamMember } from "@crayonscodetech/cms-sdk";
@@ -3164,7 +3155,7 @@ export function SocialLinks({ socials }: { socials: TeamMember["socials"] }) {
     <div className="flex gap-4">
       {links.map((social) => (
         <a key={social.url} href={social.url} target="_blank" rel="noopener noreferrer">
-          {social.platform || "Link"}
+          {social.site_name || "Link"}
         </a>
       ))}
     </div>

@@ -1,6 +1,8 @@
 export interface Social {
+  site_name: string;
+  url: string;
+  /** @deprecated Never sent by the API; read `site_name`. */
   platform?: string;
-  url?: string;
 }
 
 export interface TeamMember {

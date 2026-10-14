@@ -55,6 +55,13 @@ export interface ProductTag {
   slug: string;
 }
 
+/** The category or brand a product belongs to, as embedded on product detail. */
+export interface ProductRef {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface ProductListItem {
   id: string;
   site_id: string;
@@ -81,4 +88,7 @@ export interface Product extends Omit<ProductListItem, "variants"> {
   deleted_at: string | null;
   updated_at: string;
   variants?: ProductVariant[];
+  // Optional: CMS backends that predate embedded refs omit these
+  category?: ProductRef | null;
+  brand?: ProductRef | null;
 }

@@ -1,5 +1,6 @@
 import type { Section } from "./cms-page";
 import type { ProductSEO } from "./seo";
+import type { TeamMember } from "./team-member";
 
 export interface Category {
   id: string;
@@ -12,4 +13,6 @@ export interface Category {
   extra?: (Record<string, unknown> & { sections?: Section[] }) | null;
   created_at: string;
   updated_at: string;
+  /** Published members, ordered. Only present on `fetchCategoryBySlug`. */
+  members?: TeamMember[];
 }
