@@ -37,7 +37,7 @@
     "lint": "eslint src/**/*.ts"
   },
   "devDependencies": {
-    "tsdown": "latest",
+    "tsdown": "0.22.14",
     "typescript": "^6.0.3"
   },
   "module": "dist/index.mjs"
