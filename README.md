@@ -299,119 +299,87 @@ export function CmsIcon({ name, ...props }: { name: IconName | string } & Lucide
 
 #### Advanced UI Implementation (Recommended)
 
-For production-grade applications, we recommend a declarative approach using a **Registry** and **Router**. This pattern removes the need for hardcoded folders (like `/blog` or `/services`) and handles all CMS-driven URLs dynamically.
+Routes come in two kinds:
 
-##### 1. Declarative Page Registry
+| Page types                                                                          | Route                                                                  | Page fetched with                                                                                                               |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `blog`, `events`, `services`, `gallery`, `team`, `clients-partners` (listing types) | **Static folders**: `app/blog/page.tsx`, `app/blog/[slug]/page.tsx`, … | `fetchPageByType(siteId, "blog")` for the page's sections and SEO, plus the entity fetches (`fetchBlogs`, `fetchBlogBySlug`, …) |
+| `home`, `about`, `contact`, `faq`, `testimonial`, `custom`                          | One catch-all: `app/[[...slug]]/page.tsx`                              | `fetchPageByUrl(siteId, urlPath)`                                                                                               |
 
-Map CMS `page_type` strings to their corresponding React components. This centralizes your UI mapping.
+> **The CMS `url` of a listing-type page is ignored.** The folder name is the URL: the blog listing is always `/blog`, whatever the blog page's `url` says in the CMS, and the catch-all returns 404 for that `url`, so the page never renders twice. Still keep the CMS `url` equal to the route (`/blog`): the pages sitemap and links editors build in the header and footer use it.
 
-The page types are `home`, `about`, `contact`, `services`, `blog`, `team`, `gallery`, `events`, `clients-partners`, `testimonial`, `faq` and `custom` (the SDK exports them as `allPageTypes`). Every type except `custom` is a singleton: a site has at most one page of it. A type with no entry below falls back to `CustomPage`, which just renders the page's sections. There is no `products` page type: store routes are matched before CMS pages (see [Route Structure](#route-structure) under Store).
+**Why static routes:** they cut API calls on every detail view. A catch-all has to work out what `/blog/my-post` is: it asks for a page at `/blog/my-post` (a 404, which the API never caches), then for the parent `/blog` to learn the page type, and only then fetches the post — three calls, and four for `/team/[category]/[member]`. The `app/blog/[slug]` folder already says what the URL is, so the detail view is **one** call, `fetchBlogBySlug`. A static route can also set its own caching (an events list that changes when an event passes, not when the CMS is edited), which a catch-all cannot do for one URL.
+
+Every page type except `custom` is a singleton (a site has at most one page of it; the SDK exports the list as `allPageTypes`), which is why `fetchPageByType` can find a listing page without its URL. There is no `products` page type: store routes are matched separately (see [Route Structure](#route-structure) under Store).
+
+##### 1. Route Config
+
+One file names the listing types and their routes, and loads a listing page:
+
+```tsx
+// lib/cms-routes.ts
+import { notFound } from "next/navigation";
+import { CmsError, type Page, type PageType } from "@crayonscodetech/cms-sdk";
+import { cms, SITE_ID } from "./cms";
+
+/** Listing page types and the static route that serves each. The folder name is the URL. */
+export const STATIC_PAGE_ROUTES = {
+  blog: "/blog",
+  events: "/events",
+  services: "/services",
+  gallery: "/gallery",
+  team: "/team",
+  "clients-partners": "/clients-partners",
+} as const satisfies Partial<Record<PageType, string>>;
+
+export type StaticPageType = keyof typeof STATIC_PAGE_ROUTES;
+
+export function hasStaticRoute(pageType: PageType): pageType is StaticPageType {
+  return pageType in STATIC_PAGE_ROUTES;
+}
+
+/** The CMS page of a listing type (sections + SEO). 404s when the site has none. */
+export async function fetchListingPage(pageType: StaticPageType): Promise<Page> {
+  const page = await cms.fetchPageByType(SITE_ID, pageType).catch((error) => {
+    // 404: the site has no published page of this type, so the route does not exist.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!page) notFound(); // narrows the type only
+  return page;
+}
+```
+
+##### 2. Page Registry
+
+Map the catch-all's page types to their components. A type with no entry (`faq`, `testimonial`) falls back to `CustomPage`, which renders the page's sections in order.
 
 ```tsx
 // lib/cms-registry.ts
 import HomePage from "@/components/pages/HomePage";
 import AboutPage from "@/components/pages/AboutPage";
-import BlogsPage from "@/components/pages/BlogPage";
-import ServicesPage from "@/components/pages/ServicesPage";
-import EventsPage from "@/components/pages/EventPage";
-import GalleryPage from "@/components/pages/GalleryPage";
-import TeamPage from "@/components/pages/TeamPage";
 import ContactPage from "@/components/pages/ContactPage";
 import CustomPage from "@/components/pages/CustomPage";
-
-// Detail views (sub-pages), each fetched by slug
-import BlogDetailPage from "@/components/pages/BlogDetailPage";
-import ServiceDetailPage from "@/components/pages/ServiceDetailPage";
-import EventDetailPage from "@/components/pages/EventDetailPage";
-import GalleryDetailPage from "@/components/pages/GalleryDetailPage";
-import TeamMemberDetailPage from "@/components/pages/TeamMemberDetailPage";
-import TeamCategoryPage from "@/components/pages/TeamCategoryPage";
-import BrandGroupDetailPage from "@/components/pages/BrandGroupDetailPage";
 
 export const PAGE_COMPONENT_MAP: Record<string, any> = {
   home: HomePage,
   about: AboutPage,
-  blog: BlogsPage,
-  services: ServicesPage,
-  events: EventsPage,
-  gallery: GalleryPage,
-  team: TeamPage,
   contact: ContactPage,
   custom: CustomPage,
 };
-
-// Maps parent page type to its detail component
-export const DETAIL_COMPONENT_MAP: Record<string, any> = {
-  blog: BlogDetailPage, // fetchBlogBySlug
-  services: ServiceDetailPage, // fetchServiceBySlug
-  events: EventDetailPage, // fetchEventBySlug
-  gallery: GalleryDetailPage, // fetchAlbumBySlug
-  "clients-partners": BrandGroupDetailPage, // fetchBrandGroupBySlug
-  team: {
-    category: TeamCategoryPage, // fetchCategoryBySlug
-    member: TeamMemberDetailPage, // fetchTeamMemberBySlug
-  },
-};
 ```
 
-##### 2. Route Resolution Helper
+##### 3. Catch-All Route
 
-This utility determines if a URL path is an exact CMS page or a "Detail" page (e.g., a specific blog post).
-
-```tsx
-// lib/cms-router.ts
-import { CmsError, type Page } from "@crayonscodetech/cms-sdk";
-import { cms, SITE_ID } from "./cms";
-
-// fetchPageByUrl throws a CmsError with status 404 when no page has this URL.
-// Here that is a normal outcome (the detail-page fallback below handles it);
-// every other status is a real failure and is rethrown.
-async function findPage(urlPath: string): Promise<Page | null> {
-  try {
-    return await cms.fetchPageByUrl(SITE_ID, urlPath);
-  } catch (error) {
-    if (error instanceof CmsError && error.status === 404) return null;
-    throw error;
-  }
-}
-
-export async function resolveCmsRoute(slug: string[]) {
-  const urlPath = slug.length > 0 ? `/${slug.join("/")}` : "/";
-  const exactPage = await findPage(urlPath);
-
-  if (exactPage) return { type: "page" as const, data: exactPage };
-
-  // 2. Check for detail page (walking up the path)
-  // Example: /blog/my-post or /news/my-post
-  if (slug.length > 0) {
-    for (let i = slug.length - 1; i >= 0; i--) {
-      const parentPath = "/" + slug.slice(0, i).join("/");
-      const parentPage = await findPage(parentPath || "/");
-
-      if (parentPage) {
-        return {
-          type: "detail" as const,
-          parentType: parentPage.page_type,
-          slug: slug.slice(i), // e.g., ["my-post-slug"]
-          parentUrl: parentPage.url,
-        };
-      }
-    }
-  }
-
-  return null;
-}
-```
-
-##### 3. Unified Catch-All Route
-
-Using the registry and router, your `app/[[...slug]]/page.tsx` handles every route dynamically.
+Static folders win over the catch-all in Next.js, so `/blog` and `/blog/my-post` never reach it. It serves the remaining pages with one exact lookup:
 
 ```tsx
 // app/[[...slug]]/page.tsx
 import { notFound } from "next/navigation";
-import { resolveCmsRoute } from "@/lib/cms-router";
-import { PAGE_COMPONENT_MAP, DETAIL_COMPONENT_MAP } from "@/lib/cms-registry";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { cms, SITE_ID } from "@/lib/cms";
+import { hasStaticRoute } from "@/lib/cms-routes";
+import { PAGE_COMPONENT_MAP } from "@/lib/cms-registry";
 
 export default async function CatchAllPage({
   params,
@@ -419,54 +387,18 @@ export default async function CatchAllPage({
   params: Promise<{ slug?: string[] }>;
 }) {
   const { slug = [] } = await params;
-  const resolution = await resolveCmsRoute(slug);
+  const urlPath = slug.length > 0 ? `/${slug.join("/")}` : "/";
 
-  if (!resolution) notFound();
+  const page = await cms.fetchPageByUrl(SITE_ID, urlPath).catch((error) => {
+    // 404: no page has this URL. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  // A listing-type page is served by its static route; its CMS url is ignored.
+  if (!page || hasStaticRoute(page.page_type)) notFound();
 
-  if (resolution.type === "page") {
-    const Component =
-      PAGE_COMPONENT_MAP[resolution.data.page_type] ||
-      PAGE_COMPONENT_MAP.custom;
-    return <Component page={resolution.data} />;
-  }
-
-  if (resolution.type === "detail") {
-    const Component = DETAIL_COMPONENT_MAP[resolution.parentType];
-    if (!Component) notFound();
-
-    // Team nests two levels: /team/[category] and /team/[category]/[member]
-    if (resolution.parentType === "team") {
-      if (resolution.slug.length === 1) {
-        return (
-          <Component.category
-            params={Promise.resolve({ category: resolution.slug[0] })}
-            parentUrl={resolution.parentUrl}
-          />
-        );
-      }
-      if (resolution.slug.length !== 2) notFound();
-      return (
-        <Component.member
-          params={Promise.resolve({
-            category: resolution.slug[0],
-            slug: resolution.slug[1],
-          })}
-        />
-      );
-    }
-
-    // Every other detail type is one level deep: /blog/a/b is not a page
-    if (resolution.slug.length !== 1) notFound();
-
-    return (
-      <Component
-        params={Promise.resolve({ slug: resolution.slug[0] })}
-        parentUrl={resolution.parentUrl}
-      />
-    );
-  }
-
-  notFound();
+  const Component = PAGE_COMPONENT_MAP[page.page_type] ?? PAGE_COMPONENT_MAP.custom;
+  return <Component page={page} />;
 }
 ```
 
@@ -787,27 +719,27 @@ Different page types follow different rendering strategies. Understanding these 
 
 ### Page Fetch Map (Route -> Table/Entity -> SDK Fetch)
 
-| Route                       | Primary tables/entities           | Required fetch call(s)                                                                          |
-| --------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `/` (home)                  | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")`                                                                   |
-| `[[...slug]]` CMS pages     | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)`                                                               |
-| `/about`                    | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                                     |
-| `/services`                 | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                                 |
-| `/services/[slug]`          | `services`                        | `fetchServiceBySlug(siteId, slug)`                                                              |
-| `/blog` or `/news`          | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` (or your CMS-defined base url) + `fetchBlogs(siteId, params)` |
-| `/blog/[slug]`              | `blog`                            | `fetchBlogBySlug(siteId, slug)`                                                                 |
-| `/events`                   | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`                             |
-| `/events/[slug]`            | `events`                          | `fetchEventBySlug(siteId, slug)`                                                                |
-| `/gallery`                  | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
-| `/gallery/[slug]`           | `albums` + `album-items`          | `fetchAlbumBySlug(siteId, slug)` + `fetchAlbumItems(siteId, { album: slug })`                   |
-| `/team`                     | `page` + `team-members`           | `fetchPageByUrl(siteId, "/team")` + `fetchCategories(siteId)` / `fetchTeamMembers(siteId)`      |
-| `/team/[category]`          | `categories` (+ its `members`)    | `fetchCategoryBySlug(siteId, category)`                                                         |
-| `/team/[category]/[member]` | `team-members`                    | `fetchTeamMemberBySlug(siteId, member)` (+ `fetchCategoryBySlug` to check the member belongs)   |
-| `/clients-partners`         | `page` + `brand-groups`           | `fetchPageByUrl(siteId, "/clients-partners")` + `fetchBrandGroups(siteId)`                      |
-| `/clients-partners/[slug]`  | `brand-groups` (+ its `brands`)   | `fetchBrandGroupBySlug(siteId, slug)`                                                           |
-| `/contact`                  | `contact` (form submissions)      | `fetchContactConfig(siteId)` + `submitContactForm(siteId, payload, attachments?)`               |
+| Route                             | Route file                              | Required fetch call(s)                                                                               |
+| --------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `/` (home)                        | `app/[[...slug]]/page.tsx`              | `fetchPageByUrl(siteId, "/")`                                                                        |
+| `/about`                          | `app/[[...slug]]/page.tsx`              | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                                          |
+| `/contact`                        | `app/[[...slug]]/page.tsx`              | `fetchPageByUrl(siteId, "/contact")` + `fetchContactConfig(siteId)`; submit with `submitContactForm` |
+| Custom, FAQ and testimonial pages | `app/[[...slug]]/page.tsx`              | `fetchPageByUrl(siteId, urlPath)`                                                                    |
+| `/services`                       | `app/services/page.tsx`                 | `fetchPageByType(siteId, "services")` + `fetchServices(siteId)`                                      |
+| `/services/[slug]`                | `app/services/[slug]/page.tsx`          | `fetchServiceBySlug(siteId, slug)`                                                                   |
+| `/blog`                           | `app/blog/page.tsx`                     | `fetchPageByType(siteId, "blog")` + `fetchBlogs(siteId, params)`                                     |
+| `/blog/[slug]`                    | `app/blog/[slug]/page.tsx`              | `fetchBlogBySlug(siteId, slug)`                                                                      |
+| `/events`                         | `app/events/page.tsx`                   | `fetchPageByType(siteId, "events")` + `fetchEvents(siteId, params)`                                  |
+| `/events/[slug]`                  | `app/events/[slug]/page.tsx`            | `fetchEventBySlug(siteId, slug)`                                                                     |
+| `/gallery`                        | `app/gallery/page.tsx`                  | `fetchPageByType(siteId, "gallery")` + `fetchAlbums(siteId, params)`                                 |
+| `/gallery/[slug]`                 | `app/gallery/[slug]/page.tsx`           | `fetchAlbumBySlug(siteId, slug)` + `fetchAlbumItems(siteId, { album: slug })`                        |
+| `/team`                           | `app/team/page.tsx`                     | `fetchPageByType(siteId, "team")`; its `team` sections fetch the members                             |
+| `/team/[category]`                | `app/team/[category]/page.tsx`          | `fetchCategoryBySlug(siteId, category)` (includes its `members`)                                     |
+| `/team/[category]/[member]`       | `app/team/[category]/[member]/page.tsx` | `fetchTeamMemberBySlug(siteId, member)` + `fetchCategoryBySlug` to check the member belongs          |
+| `/clients-partners`               | `app/clients-partners/page.tsx`         | `fetchPageByType(siteId, "clients-partners")`; its `clients` sections fetch the brands               |
+| `/clients-partners/[slug]`        | `app/clients-partners/[slug]/page.tsx`  | `fetchBrandGroupBySlug(siteId, slug)` (includes its `brands`)                                        |
 
-Base URLs such as `/team` or `/clients-partners` are whatever the CMS page's `url` is; the catch-all router finds the parent page by walking up the path, so the detail routes follow it. Each detail route is **one by-slug call**: do not fetch a list and search it. Store routes (products, categories, brands, collections) are in [Route Structure](#route-structure).
+Listing routes are fixed folders and ignore the CMS page's `url` (see [Advanced UI Implementation](#advanced-ui-implementation-recommended)). Each detail route is **one by-slug call**: do not fetch a list and search it. Store routes (products, categories, brands, collections) are in [Route Structure](#route-structure).
 
 ### Home Page — Section Rendering with Targeting
 
@@ -947,18 +879,20 @@ export default async function AboutPage({
 
 ### Services Page — Fetch & Render Service Data
 
-The `service` section type on a page provides only CMS-controlled **headings and labels** (e.g. `section_heading`, `title`, `subtitle`). The actual list of services must be fetched separately with `fetchServices`.
+A static route (see [Advanced UI Implementation](#advanced-ui-implementation-recommended)). The services page itself comes from `fetchPageByType(siteId, "services")`; its `service` section provides only CMS-controlled **headings and labels** (e.g. `section_heading`, `title`, `subtitle`). The actual list of services must be fetched separately with `fetchServices`.
 
 ```tsx
-// components/pages/ServicesPage.tsx
+// app/services/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import { notFound } from "next/navigation";
+import { fetchListingPage } from "@/lib/cms-routes";
 import { ServiceCard } from "@/components/service-card";
-import type { Page } from "@crayonscodetech/cms-sdk";
 
-export default async function ServicesPage({ page }: { page: Page }) {
+export default async function ServicesPage() {
   // fetchServices is paginated: the list is in `.data`
-  const { data: services } = await cms.fetchServices(SITE_ID);
+  const [page, { data: services }] = await Promise.all([
+    fetchListingPage("services"),
+    cms.fetchServices(SITE_ID),
+  ]);
 
   // The "service" section from the page carries the heading/subtitle
   const serviceSection = page.sections.find((s) => s.type === "service");
@@ -987,7 +921,7 @@ export default async function ServicesPage({ page }: { page: Page }) {
 **Service detail page:**
 
 ```tsx
-// components/pages/ServiceDetailPage.tsx
+// app/services/[slug]/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { CmsError } from "@crayonscodetech/cms-sdk";
@@ -996,10 +930,8 @@ import SafeHtml from "@/components/safe-html";
 
 export default async function ServiceDetailPage({
   params,
-  parentUrl,
 }: {
   params: Promise<{ slug: string }>;
-  parentUrl?: string;
 }) {
   const { slug } = await params;
   const service = await cms.fetchServiceBySlug(SITE_ID, slug).catch((error) => {
@@ -1040,19 +972,21 @@ export default async function ServiceDetailPage({
 
 ### Blog Page — Listing & Detail
 
-The `blog` section type carries heading/subtitle text only. Fetch the actual posts with `fetchBlogs`.
+The blog is a static route, not a catch-all page: `app/blog/page.tsx` lists the posts and `app/blog/[slug]/page.tsx` shows one. The blog page's own content (its sections and SEO) comes from `fetchPageByType(siteId, "blog")`, so the CMS page's `url` is ignored: the listing is always `/blog`. Its `blog` section carries heading/subtitle text only; fetch the actual posts with `fetchBlogs`.
 
 **Listing page:**
 
 ```tsx
-// components/pages/BlogPage.tsx
+// app/blog/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import { notFound } from "next/navigation";
+import { fetchListingPage } from "@/lib/cms-routes";
 import Link from "next/link";
-import type { Page } from "@crayonscodetech/cms-sdk";
 
-export default async function BlogPage({ page }: { page: Page }) {
-  const { data: blogs } = await cms.fetchBlogs(SITE_ID, { page: 1, limit: 12 });
+export default async function BlogPage() {
+  const [page, { data: blogs }] = await Promise.all([
+    fetchListingPage("blog"),
+    cms.fetchBlogs(SITE_ID, { page: 1, limit: 12 }),
+  ]);
 
   const blogSection = page.sections.find((s) => s.type === "blog");
 
@@ -1076,25 +1010,21 @@ export default async function BlogPage({ page }: { page: Page }) {
 }
 ```
 
-**Search and category filtering:**
+**Search:**
 
 ```tsx
-// Search — pass the query as a param
+// The API searches; do not fetch every blog and filter them yourself
 const { data: results } = await cms.fetchBlogs(SITE_ID, {
   search: searchQuery,
 });
-
-// Category filtering — fetch categories then filter client-side, or show per-category pages
-const { data: categories } = await cms.fetchCategories(SITE_ID);
-
-// Blogs don't have a direct category_id param — fetch categories for display,
-// then use them as navigation labels linking to filtered URLs
 ```
+
+> Blogs have no categories. `fetchCategories` returns **team** categories, so do not use it for blog navigation.
 
 **Blog detail page:**
 
 ```tsx
-// components/pages/BlogDetailPage.tsx
+// app/blog/[slug]/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { CmsError } from "@crayonscodetech/cms-sdk";
@@ -1138,31 +1068,26 @@ export default async function BlogDetailPage({
 
 ### Events Page — Listing & Detail
 
-Same pattern as blogs. The `event` section carries display text; actual event data comes from `fetchEvents`.
+Same pattern as blogs: static routes `app/events/page.tsx` and `app/events/[slug]/page.tsx`, with the events page's content from `fetchPageByType(siteId, "events")`. The `event` section carries display text; actual event data comes from `fetchEvents`.
 
 **Listing page:**
 
 ```tsx
-// components/pages/EventPage.tsx
+// app/events/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
-import { notFound } from "next/navigation";
+import { fetchListingPage } from "@/lib/cms-routes";
+import { RenderSections } from "@/components/render-sections";
 import Link from "next/link";
-import type { Page, SiteConfig } from "@crayonscodetech/cms-sdk";
 
-export default async function EventsPage({
-  page,
-  site,
-}: {
-  page: Page;
-  site?: SiteConfig | null;
-}) {
-  const { data: events } = await cms.fetchEvents(SITE_ID, {
-    page: 1,
-    limit: 12,
-  });
+export default async function EventsPage() {
+  const [page, { data: events }] = await Promise.all([
+    fetchListingPage("events"),
+    cms.fetchEvents(SITE_ID, { page: 1, limit: 12 }),
+  ]);
 
   return (
     <div>
+      <RenderSections sections={page.sections} />
       {events.map((event) => (
         <Link key={event.id} href={`/events/${event.slug}`}>
           {event.image_url && (
@@ -1182,7 +1107,7 @@ export default async function EventsPage({
 **Event detail page:**
 
 ```tsx
-// components/pages/EventDetailPage.tsx
+// app/events/[slug]/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { CmsError } from "@crayonscodetech/cms-sdk";
@@ -1229,34 +1154,41 @@ export default async function EventDetailPage({
 
 ### Gallery Page — Albums & Photos
 
-The `gallery` section carries the `album_id` to display. Fetch albums with `fetchAlbums`, and their photos with `fetchAlbumItems` (albums never include `items`).
+Static routes `app/gallery/page.tsx` and `app/gallery/[slug]/page.tsx`; the gallery page's content comes from `fetchPageByType(siteId, "gallery")`. Fetch albums with `fetchAlbums`, and their photos with `fetchAlbumItems` (albums never include `items`).
 
 ```tsx
-// components/pages/GalleryPage.tsx
+// app/gallery/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
+import { fetchListingPage } from "@/lib/cms-routes";
+import { RenderSections } from "@/components/render-sections";
 import Link from "next/link";
 import SafeHtml from "@/components/safe-html";
-import type { Page } from "@crayonscodetech/cms-sdk";
 
-export default async function GalleryPage({ page }: { page: Page }) {
-  const { data: albums } = await cms.fetchAlbums(SITE_ID);
+export default async function GalleryPage() {
+  const [page, { data: albums }] = await Promise.all([
+    fetchListingPage("gallery"),
+    cms.fetchAlbums(SITE_ID),
+  ]);
 
   return (
-    <div className="grid">
-      {albums.map((album) => (
-        <Link key={album.id} href={`/gallery/${album.slug}`}>
-          {album.cover_image_url && (
-            <img
-              src={album.cover_image_url}
-              alt={album.cover_image_alt ?? album.title}
-            />
-          )}
-          <h2>{album.title}</h2>
-          {/* description is rich-text HTML */}
-          <SafeHtml html={album.description} />
-        </Link>
-      ))}
-    </div>
+    <>
+      <RenderSections sections={page.sections} />
+      <div className="grid">
+        {albums.map((album) => (
+          <Link key={album.id} href={`/gallery/${album.slug}`}>
+            {album.cover_image_url && (
+              <img
+                src={album.cover_image_url}
+                alt={album.cover_image_alt ?? album.title}
+              />
+            )}
+            <h2>{album.title}</h2>
+            {/* description is rich-text HTML */}
+            <SafeHtml html={album.description} />
+          </Link>
+        ))}
+      </div>
+    </>
   );
 }
 ```
@@ -1266,7 +1198,7 @@ export default async function GalleryPage({ page }: { page: Page }) {
 Fetch the album with `fetchAlbumBySlug` and its photos with `fetchAlbumItems` (default limit 10, max 100, so pass a `limit`).
 
 ```tsx
-// components/pages/GalleryDetailPage.tsx
+// app/gallery/[slug]/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { CmsError } from "@crayonscodetech/cms-sdk";
@@ -1319,15 +1251,27 @@ export default async function AlbumDetailPage({
 
 ### Team Page — Categories & Members
 
-The team page (`page_type: "team"`) renders its sections like any other page. Under it, the catch-all router sends one extra segment to the **category** page and two to the **member** page:
+Three static routes:
 
-- `/team/[category]`: `fetchCategoryBySlug` returns the category with its published `members` (in order) and its `extra.sections`. That is one call; do not fetch `fetchTeamMembersByCategory` as well.
-- `/team/[category]/[member]`: `fetchTeamMemberBySlug` looks the member up by slug alone, so check that `member.category_id` matches the category in the URL. Otherwise every member is reachable under every category, which duplicates content.
+- `/team` (`app/team/page.tsx`): the team page from `fetchPageByType(siteId, "team")`. Render its sections; its `team` sections fetch the members (see [Data-Driven Section Components](#data-driven-section-components)).
+- `/team/[category]` (`app/team/[category]/page.tsx`): `fetchCategoryBySlug` returns the category with its published `members` (in order) and its `extra.sections`. That is one call; do not fetch `fetchTeamMembersByCategory` as well.
+- `/team/[category]/[member]` (`app/team/[category]/[member]/page.tsx`): `fetchTeamMemberBySlug` looks the member up by slug alone, so check that `member.category_id` matches the category in the URL. Otherwise every member is reachable under every category, which duplicates content.
+
+```tsx
+// app/team/page.tsx
+import { fetchListingPage } from "@/lib/cms-routes";
+import { RenderSections } from "@/components/render-sections";
+
+export default async function TeamPage() {
+  const page = await fetchListingPage("team");
+  return <RenderSections sections={page.sections} />;
+}
+```
 
 > Sitemap: `team-members` sitemap items carry no category slug, so they cannot build `/team/[category]/[member]` URLs on their own. List `team-categories` from `fetchSitemap` and take each category's `members` from `fetchCategoryBySlug` instead.
 
 ```tsx
-// components/pages/TeamCategoryPage.tsx
+// app/team/[category]/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -1337,10 +1281,8 @@ import SafeHtml from "@/components/safe-html";
 
 export default async function TeamCategoryPage({
   params,
-  parentUrl = "/team",
 }: {
   params: Promise<{ category: string }>;
-  parentUrl?: string;
 }) {
   const { category: slug } = await params;
   const category = await cms.fetchCategoryBySlug(SITE_ID, slug).catch((error) => {
@@ -1359,7 +1301,7 @@ export default async function TeamCategoryPage({
 
       <div className="grid">
         {members.map((member) => (
-          <Link key={member.id} href={`${parentUrl}/${category.slug}/${member.slug}`}>
+          <Link key={member.id} href={`/team/${category.slug}/${member.slug}`}>
             {member.profile_image && <img src={member.profile_image} alt={member.name} />}
             <h2>{member.name}</h2>
             {member.position && <p>{member.position}</p>}
@@ -1376,7 +1318,7 @@ export default async function TeamCategoryPage({
 ```
 
 ```tsx
-// components/pages/TeamMemberDetailPage.tsx
+// app/team/[category]/[member]/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { CmsError } from "@crayonscodetech/cms-sdk";
@@ -1386,9 +1328,9 @@ import { SocialLinks } from "@/components/social-links"; // defined under FAQ & 
 export default async function TeamMemberDetailPage({
   params,
 }: {
-  params: Promise<{ category: string; slug: string }>;
+  params: Promise<{ category: string; member: string }>;
 }) {
-  const { category: categorySlug, slug } = await params;
+  const { category: categorySlug, member: slug } = await params;
 
   // 404: no such member / category. Any other status is a real failure.
   const notFoundOn404 = (error: unknown): never => {
@@ -1420,10 +1362,13 @@ export default async function TeamMemberDetailPage({
 
 ### Clients & Partners — Brand Group Detail
 
-The clients page (`page_type: "clients-partners"`) renders its sections, where a `clients` section lists brands with `fetchBrandGroups` / `fetchBrands`. A brand group's own page, one segment under it, is a single call: `fetchBrandGroupBySlug` returns the group with its `brands` (in order) and its `extra.sections`.
+Two static routes:
+
+- `/clients-partners` (`app/clients-partners/page.tsx`): the page from `fetchPageByType(siteId, "clients-partners")`. Render its sections; a `clients` section lists a group's brands with `fetchBrands`. The code is the same as `app/team/page.tsx` above, with `fetchListingPage("clients-partners")`.
+- `/clients-partners/[slug]` (`app/clients-partners/[slug]/page.tsx`): a single call, `fetchBrandGroupBySlug`, returns the group with its `brands` (in order) and its `extra.sections`.
 
 ```tsx
-// components/pages/BrandGroupDetailPage.tsx
+// app/clients-partners/[slug]/page.tsx
 import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import { CmsError } from "@crayonscodetech/cms-sdk";
@@ -1792,7 +1737,7 @@ export default async function CatchAll({
   }
 
   // ── CMS pages (catch-all continues below) ────────────────────────────────
-  // ... resolveCmsRoute / fetchPageByUrl logic
+  // ... the fetchPageByUrl lookup from "Catch-All Route" under Usage in Components
 }
 ```
 
@@ -2690,7 +2635,7 @@ export default function NotFoundPage() {
 
 ## SEO & Metadata
 
-Every `Page` returned by `fetchPageByUrl` or `fetchPages` includes an `seo` field (`SEO | null`) with `title`, `description`, `tags`, and `image`. Use Next.js `generateMetadata` to apply this per page, falling back to the site-wide defaults from `SiteConfig`.
+Every `Page` returned by `fetchPageByUrl`, `fetchPageByType` or `fetchPages` includes an `seo` field (`SEO | null`) with `title`, `description`, `tags`, and `image`. Use Next.js `generateMetadata` to apply this per page, falling back to the site-wide defaults from `SiteConfig`.
 
 > **Required env var for canonical URLs**: add `NEXT_PUBLIC_SITE_URL=https://www.yoursite.com` (your website's own domain — not the CMS API URL) to `.env.local`. Without it, `canonical` and `og:url` tags are omitted.
 
@@ -2755,6 +2700,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       },
     }),
   };
+}
+```
+
+The static listing routes (`/blog`, `/events`, `/services`, `/gallery`, `/team`, `/clients-partners`) build the same metadata from their page, loaded by type. `fetchListingPage` (from [Route Config](#1-route-config)) makes the same request as the page component, which Next.js deduplicates, and 404s when the site has no such page:
+
+```tsx
+// app/blog/page.tsx
+import type { Metadata } from "next";
+import { fetchListingPage } from "@/lib/cms-routes";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const page = await fetchListingPage("blog");
+  // ...then exactly as above, with urlPath = "/blog"
+  return { title: page.seo?.title ?? page.title, description: page.seo?.description ?? undefined };
 }
 ```
 
@@ -2841,7 +2800,28 @@ Align your project structure to handle CMS data efficiently using Server Compone
 ```
 app/
 ├── [[...slug]]/
-│   └── page.tsx                # Catch-all — handles CMS pages + store routes
+│   └── page.tsx                # Catch-all — home, about, contact, faq, testimonial,
+│                               #   custom pages (fetchPageByUrl) + store routes
+├── blog/
+│   ├── page.tsx                # fetchPageByType("blog") + fetchBlogs
+│   └── [slug]/page.tsx         # fetchBlogBySlug
+├── events/
+│   ├── page.tsx                # fetchPageByType("events") + fetchEvents
+│   └── [slug]/page.tsx         # fetchEventBySlug
+├── services/
+│   ├── page.tsx                # fetchPageByType("services") + fetchServices
+│   └── [slug]/page.tsx         # fetchServiceBySlug
+├── gallery/
+│   ├── page.tsx                # fetchPageByType("gallery") + fetchAlbums
+│   └── [slug]/page.tsx         # fetchAlbumBySlug + fetchAlbumItems
+├── team/
+│   ├── page.tsx                # fetchPageByType("team")
+│   └── [category]/
+│       ├── page.tsx            # fetchCategoryBySlug
+│       └── [member]/page.tsx   # fetchTeamMemberBySlug
+├── clients-partners/
+│   ├── page.tsx                # fetchPageByType("clients-partners")
+│   └── [slug]/page.tsx         # fetchBrandGroupBySlug
 ├── layout.tsx                  # Root layout — fetches header, footer, siteConfig
 ├── api/
 │   ├── contact/
@@ -2850,21 +2830,9 @@ app/
 │       └── orders/
 │           └── route.ts        # Store order placement (placeOrder)
 components/
-├── pages/                      # CMS page layouts (registry-mapped)
+├── pages/                      # Catch-all page layouts (registry-mapped)
 │   ├── HomePage.tsx
 │   ├── AboutPage.tsx
-│   ├── BlogPage.tsx
-│   ├── BlogDetailPage.tsx
-│   ├── ServicesPage.tsx
-│   ├── ServiceDetailPage.tsx
-│   ├── EventPage.tsx
-│   ├── EventDetailPage.tsx
-│   ├── GalleryPage.tsx
-│   ├── GalleryDetailPage.tsx
-│   ├── TeamPage.tsx
-│   ├── TeamCategoryPage.tsx
-│   ├── TeamMemberDetailPage.tsx
-│   ├── BrandGroupDetailPage.tsx
 │   ├── ContactPage.tsx
 │   ├── CustomPage.tsx
 │   │
@@ -2903,11 +2871,11 @@ config/
 └── store.ts                    # STORE_ENABLED feature flag
 lib/
 ├── cms.ts                      # SDK client singleton (CMS + Store)
-├── cms-registry.ts             # CMS page component map
-└── cms-router.ts               # CMS route resolution
+├── cms-routes.ts               # Listing page types → static routes, fetchListingPage
+└── cms-registry.ts             # Catch-all page component map
 ```
 
-> **Note**: This structure eliminates the need for hardcoded folders for `/blog`, `/services`, etc.
+> **Note**: Listing page types (`blog`, `events`, `services`, `gallery`, `team`, `clients-partners`) have their own folders, and their CMS page `url` is ignored. Everything else goes through the catch-all.
 
 > All `sections/` components that need live data are **async server components**. The `contact-form.tsx` is the only client component (`"use client"`).
 
@@ -3544,36 +3512,35 @@ This is the complete picture of how a page request travels through the system fr
 
 ### Step 1 — Browser makes a request
 
-A user visits any URL, e.g. `/services` or `/blog/my-post`. Next.js routes every request to the single catch-all file: `app/[[...slug]]/page.tsx`.
+A user visits a URL, e.g. `/about`, `/blog` or `/blog/my-post`. Next.js matches static folders first:
 
-### Step 2 — Catch-all fetches the page by URL
+- **Listing types** (`/blog`, `/events`, `/services`, `/gallery`, `/team`, `/clients-partners`, and the detail routes under them) go to their own route files, e.g. `app/blog/page.tsx` and `app/blog/[slug]/page.tsx`.
+- **Everything else** (home, about, contact, FAQ, testimonial and custom pages) goes to the catch-all, `app/[[...slug]]/page.tsx`.
 
-The catch-all calls `fetchPageByUrl(siteId, urlPath)` for the current request path. Pages are fetched on-demand only when users navigate to them (SSR-friendly dynamic routing).
+### Step 2 — The page is fetched
 
-### Step 3 — URL is matched to a page
+- **Static listing route**: `fetchPageByType(siteId, "blog")` loads the page's sections and SEO. The CMS page's `url` is not used.
+- **Static detail route**: one by-slug call, e.g. `fetchBlogBySlug(siteId, slug)`.
+- **Catch-all**: `fetchPageByUrl(siteId, urlPath)` for the exact path.
 
-- **Exact match**: `fetchPageByUrl(siteId, urlPath)` returns a page (`/services`, `/blog`, `/news`, etc.).
-- **Parent match**: if exact lookup fails, walk parent paths (`/blog/my-post` -> check `/blog`) and treat remaining segments as the entity slug.
-- **No match**: `notFound()`.
+### Step 3 — No match
 
-### Step 4 — Page data is passed to the right component
+A `404` from any of these becomes `notFound()`. The catch-all also returns 404 when the URL belongs to a listing-type page (e.g. the blog page's CMS `url` is `/news`), so that page is only ever served from its static route.
 
-Once a match is found, the catch-all looks up the correct page component from a registry (`PAGE_COMPONENT_MAP`) using `page_type`. It then renders that component, passing the matched `page` object plus route params/search params.
+### Step 4 — The right component renders
 
-Detail pages (e.g. a single blog post) skip the `page` prop and receive `params` (containing the item slug) and `parentUrl` instead.
+The catch-all looks up the page component in `PAGE_COMPONENT_MAP` by `page_type` (home, about, contact, or `CustomPage` for the rest) and passes it the `page`. Static routes render directly.
 
-### Step 5 — Page component fetches its own entity data
+### Step 5 — Pages fetch their own entity data
 
-The page component receives the `page` object which contains the **section chrome** (headings, subtitles, labels) for that page. It then calls its own API to get the actual content:
+The `page` object carries the **section chrome** (headings, subtitles, labels). The entity data comes from separate calls:
 
-- `ServicesPage` calls `fetchServices(siteId)` to get the list of services.
-- `BlogsPage` calls `fetchBlogs(siteId, { page, limit })` with pagination from `searchParams`.
-- `EventsPage` calls `fetchEvents(siteId, { page, limit })`.
-- `GalleryPage` calls `fetchAlbums(siteId)`.
+- `app/services/page.tsx` calls `fetchServices(siteId)`.
+- `app/blog/page.tsx` calls `fetchBlogs(siteId, { page, limit })` with pagination from `searchParams`.
+- `app/events/page.tsx` calls `fetchEvents(siteId, { page, limit })`.
+- `app/gallery/page.tsx` calls `fetchAlbums(siteId)`.
 - `AboutPage` calls `fetchAboutUs(siteId)` for mission, vision, values.
-- `HomePage` and `CustomPage` can render directly from the fetched page object.
-
-Detail pages (e.g. `BlogDetailPage`) should call slug-based fetches directly (e.g. `fetchBlogBySlug(siteId, slug)`).
+- `HomePage` and `CustomPage` render directly from the page object.
 
 ### Step 6 — Sections are rendered
 
@@ -3596,10 +3563,10 @@ The root `layout.tsx` runs on every request independently of the catch-all. It c
 
 | Step | What happens                                                                             |
 | ---- | ---------------------------------------------------------------------------------------- |
-| 1    | Browser hits any URL → Next.js sends it to `[[...slug]]/page.tsx`                        |
-| 2    | Catch-all calls `fetchPageByUrl` for the current URL path                                |
-| 3    | URL is matched to a CMS page (exact) or its parent (detail)                              |
-| 4    | Matched page data is passed to the right page component via a registry                   |
+| 1    | Listing URLs go to their static folders; everything else to `[[...slug]]/page.tsx`      |
+| 2    | Static routes call `fetchPageByType` / by-slug; the catch-all calls `fetchPageByUrl`     |
+| 3    | A 404 (or a listing-type page reached by its CMS url) becomes `notFound()`              |
+| 4    | The catch-all passes the page to its component via the registry                          |
 | 5    | Page component fetches its own entity data (services, blogs, events, etc.)               |
 | 6    | `page.sections` is passed to `RenderSections`; data-driven sections fetch their own data |
 | 7    | Rich-text HTML fields are sanitized (`SafeHtml`) before rendering                        |
