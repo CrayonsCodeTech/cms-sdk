@@ -27,7 +27,7 @@ import {
   MAX_CONTACT_ATTACHMENTS_TOTAL_BYTES,
   CONTACT_ATTACHMENT_MIME_ALLOWLIST,
 } from "../types/contact";
-import type { Product, ProductListItem } from "../types/product";
+import type { Product, ProductListItem, ProductTagMatch } from "../types/product";
 import type { ProductCategory, ProductCategoryDetail } from "../types/product-category";
 import type { ProductBrand, ProductBrandDetail } from "../types/product-brand";
 import type { Collection, CollectionDetail } from "../types/collection";
@@ -46,28 +46,166 @@ export interface FetchOptions extends RequestInit {
   revalidate?: number;
   tags?: string[];
   retries?: number;
+  /**
+   * Milliseconds each attempt (request plus reading its body) may take before
+   * it fails with a `CmsError` whose `timedOut` is true. A timeout is not
+   * retried. `0` turns the timeout off. Defaults to the client's `timeoutMs`,
+   * or `DEFAULT_TIMEOUT_MS` (`DEFAULT_SUBMIT_TIMEOUT_MS` for `submitContactForm`).
+   */
+  timeoutMs?: number;
 }
 
 export interface CmsClientConfig {
   baseUrl: string;
   defaultOptions?: FetchOptions;
+  /** Default `timeoutMs` for every read. Defaults to `DEFAULT_TIMEOUT_MS`. */
+  timeoutMs?: number;
+}
+
+// Query values carry what visitors typed (search terms, the requested path), and
+// errors end up in logs and error trackers. Keep the parameter names, which say
+// which call failed, and drop the values: `/blog/?search=…&page=…`.
+function redactUrl(url: string): string {
+  const queryStart = url.indexOf("?");
+  if (queryStart === -1) return url;
+  const names = url
+    .slice(queryStart + 1)
+    .split("&")
+    .filter(Boolean)
+    .map((pair) => `${pair.split("=")[0]}=…`);
+  return names.length ? `${url.slice(0, queryStart)}?${names.join("&")}` : url.slice(0, queryStart);
 }
 
 export class CmsError extends Error {
+  /** The request URL with query values removed (`?search=…`), so it is safe to log. */
+  public url?: string;
+
   constructor(
     public message: string,
     public status?: number,
-    public url?: string,
+    url?: string,
+    /** Per-field validation details from a 400 (`body.errors`), when the API sent them. */
+    public errors?: unknown,
+    /** Seconds to wait before retrying, from a 429's `Retry-After` header. */
+    public retryAfter?: number,
+    /** True when the request gave up after `timeoutMs`; `status` is then absent. */
+    public timedOut?: boolean,
   ) {
     super(message);
     this.name = "CmsError";
+    this.url = url === undefined ? undefined : redactUrl(url);
   }
+}
+
+/** Default per-attempt timeout for reads, in milliseconds. */
+export const DEFAULT_TIMEOUT_MS = 10_000;
+
+/** Default timeout for `submitContactForm`, which may upload up to 3 MiB of attachments. */
+export const DEFAULT_SUBMIT_TIMEOUT_MS = 30_000;
+
+/** Most ids an id-list filter (`ids`, `album_id`, `category_id`, `brand_id`, collection `id`) accepts; more is a 400. */
+export const MAX_ID_LIST = 20;
+
+/** Most line items `placeOrder` accepts in one order; more is a 400. */
+export const MAX_ORDER_ITEMS = 50;
+
+/** Longest `source_path` the 404 log accepts. */
+const MAX_404_LOG_PATH_LENGTH = 2048;
+
+// The API answers errors as { message, errors? }; fall back to the status when
+// the body is not JSON (a proxy error page, say).
+async function errorFromResponse(response: Response, url: string): Promise<CmsError> {
+  let message = `API request failed: ${response.status} ${redactUrl(url)}`;
+  let errors: unknown;
+  try {
+    const body = await response.json();
+    if (body?.message) message = body.message;
+    errors = body?.errors;
+  } catch {
+    // body not JSON, keep fallback
+  }
+  const retryAfterHeader = Number(response.headers.get("Retry-After"));
+  const retryAfter =
+    Number.isFinite(retryAfterHeader) && retryAfterHeader > 0 ? retryAfterHeader : undefined;
+  return new CmsError(message, response.status, url, errors, retryAfter);
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// A 2xx whose body is not JSON (a proxy's HTML error page, say) is a server
+// fault, not a network one: report it with its status, as a CmsError, so it is
+// not retried and `instanceof CmsError` still catches it.
+async function readJson(response: Response, url: string): Promise<any> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new CmsError(`Invalid JSON response (${response.status})`, response.status, url);
+  }
+}
+
+// Drop an unread body before retrying, so it does not hold a connection
+// (Workers allows six open at once) until it is garbage-collected.
+async function discardBody(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => {});
+}
+
+// Races `run` against a timer instead of handing fetch an AbortSignal: Next.js
+// skips its per-render request dedupe for any fetch that carries a signal, so a
+// default signal would double the identical page and site-config fetches a
+// render makes. The abandoned request is not cancelled, but the caller stops
+// waiting for it. `ms <= 0` turns the timeout off.
+async function withTimeout<T>(run: () => Promise<T>, ms: number, url: string): Promise<T> {
+  if (!(ms > 0)) return run();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new CmsError(`Request timed out after ${ms}ms`, undefined, url, undefined, undefined, true),
+        ),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([run(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Statuses worth a retry: the gateway or the worker was briefly unavailable. */
+const RETRY_STATUSES = [502, 503, 504];
+
+/** Returned from an attempt that should be retried after a backoff. */
+const RETRY = Symbol("retry");
+
+// Checked once, when the client is created: a trailing slash would make every
+// request `//api/...`, which the backend does not route, and a missing value
+// would otherwise only fail later, on every request, as a bare "Invalid URL".
+function normalizeBaseUrl(baseUrl: string | undefined): string {
+  const trimmed = (baseUrl ?? "").trim().replace(/\/+$/, "");
+  const fix = "Set it to the CMS API origin, e.g. https://api.cms.deployown.com (NEXT_PUBLIC_CMS_BASE_URL in the README).";
+  let protocol: string;
+  try {
+    protocol = new URL(trimmed).protocol;
+  } catch {
+    throw new Error(
+      trimmed
+        ? `createCmsClient: baseUrl "${trimmed}" is not a valid URL. ${fix}`
+        : `createCmsClient: baseUrl is missing. ${fix}`,
+    );
+  }
+  if (protocol !== "https:" && protocol !== "http:") {
+    throw new Error(`createCmsClient: baseUrl "${trimmed}" must start with https:// or http://. ${fix}`);
+  }
+  return trimmed;
+}
+
 export function createCmsClient(config: CmsClientConfig) {
-  const { baseUrl, defaultOptions = {} } = config;
+  const { defaultOptions = {} } = config;
+  const baseUrl = normalizeBaseUrl(config.baseUrl);
+  const clientTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   async function cmsFetch<T>(
     endpoint: string,
@@ -78,6 +216,7 @@ export function createCmsClient(config: CmsClientConfig) {
       revalidate = CACHE.NO_CACHE,
       tags,
       retries = 1,
+      timeoutMs = clientTimeoutMs,
       ...rest
     } = { ...defaultOptions, ...options };
 
@@ -93,32 +232,37 @@ export function createCmsClient(config: CmsClientConfig) {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const response = await fetch(url, fetchConfig);
+        const outcome = await withTimeout(
+          async () => {
+            const response = await fetch(url, fetchConfig);
 
-        if (!response.ok) {
-          // Retry on transient server errors (502, 503, 504)
-          if (attempt < retries && [502, 503, 504].includes(response.status)) {
-            await sleep(Math.pow(2, attempt) * 1000);
-            continue;
-          }
+            if (!response.ok) {
+              // Retry on transient server errors (502, 503, 504)
+              if (attempt < retries && RETRY_STATUSES.includes(response.status)) {
+                await discardBody(response);
+                return RETRY;
+              }
 
-          let errorMsg = `API request failed: ${response.status} ${url}`;
-          try {
-            const body = await response.json();
-            if (body?.message) errorMsg = body.message;
-          } catch {
-            // body not JSON, keep fallback
-          }
-          throw new CmsError(errorMsg, response.status, url);
+              throw await errorFromResponse(response, url);
+            }
+
+            // 204 / empty body — nothing to parse
+            if (response.status === 204) {
+              return { value: null };
+            }
+
+            const result = await readJson(response, url);
+            return { value: (result.data ?? result) as T };
+          },
+          timeoutMs,
+          url,
+        );
+
+        if (outcome === RETRY) {
+          await sleep(Math.pow(2, attempt) * 1000);
+          continue;
         }
-
-        // 204 / empty body — nothing to parse
-        if (response.status === 204) {
-          return null;
-        }
-
-        const result = await response.json();
-        return result.data ?? result;
+        return outcome.value;
       } catch (error) {
         if (error instanceof CmsError) throw error;
 
@@ -129,7 +273,8 @@ export function createCmsClient(config: CmsClientConfig) {
 
         const msg =
           error instanceof Error ? error.message : String(error);
-        throw new CmsError(`Request failed: ${msg}`, undefined, url);
+        // Some runtimes put the request URL in the error text; redact it there too.
+        throw new CmsError(`Request failed: ${msg.split(url).join(redactUrl(url))}`, undefined, url);
       }
     }
 
@@ -145,6 +290,7 @@ export function createCmsClient(config: CmsClientConfig) {
       revalidate = CACHE.NO_CACHE,
       tags,
       retries = 1,
+      timeoutMs = clientTimeoutMs,
       ...rest
     } = { ...defaultOptions, ...options };
 
@@ -160,25 +306,30 @@ export function createCmsClient(config: CmsClientConfig) {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const response = await fetch(url, fetchConfig);
+        const outcome = await withTimeout(
+          async () => {
+            const response = await fetch(url, fetchConfig);
 
-        if (!response.ok) {
-          if (attempt < retries && [502, 503, 504].includes(response.status)) {
-            await sleep(Math.pow(2, attempt) * 1000);
-            continue;
-          }
+            if (!response.ok) {
+              if (attempt < retries && RETRY_STATUSES.includes(response.status)) {
+                await discardBody(response);
+                return RETRY;
+              }
 
-          let errorMsg = `API request failed: ${response.status} ${url}`;
-          try {
-            const body = await response.json();
-            if (body?.message) errorMsg = body.message;
-          } catch {
-            // body not JSON, keep fallback
-          }
-          throw new CmsError(errorMsg, response.status, url);
+              throw await errorFromResponse(response, url);
+            }
+
+            return { value: (await readJson(response, url)) as PaginatedResponse<T> };
+          },
+          timeoutMs,
+          url,
+        );
+
+        if (outcome === RETRY) {
+          await sleep(Math.pow(2, attempt) * 1000);
+          continue;
         }
-
-        return await response.json();
+        return outcome.value;
       } catch (error) {
         if (error instanceof CmsError) throw error;
 
@@ -189,7 +340,8 @@ export function createCmsClient(config: CmsClientConfig) {
 
         const msg =
           error instanceof Error ? error.message : String(error);
-        throw new CmsError(`Request failed: ${msg}`, undefined, url);
+        // Some runtimes put the request URL in the error text; redact it there too.
+        throw new CmsError(`Request failed: ${msg.split(url).join(redactUrl(url))}`, undefined, url);
       }
     }
 
@@ -214,14 +366,15 @@ export function createCmsClient(config: CmsClientConfig) {
 
   // Multi-value filters are sent comma-separated (`?brand_id=a,b`), which is
   // what the backend parses; buildQueryString would repeat the key instead.
+  // The backend takes at most MAX_ID_LIST ids per filter and answers more with 400.
   function joinIds(value: string | string[] | undefined): string | undefined {
     return Array.isArray(value) ? value.join(",") : value;
   }
 
   // Default page size for list endpoints (categories, team, brands, testimonials,
-  // faq-groups, faqs). Matches the backend's getPaginationParamsWithoutLimit(c, 20).
-  // Album-items is NOT one of these: it uses getPaginationParams(c, 100), so its
-  // server-side default is 10 and callers should pass an explicit `limit`.
+  // faq-groups, faqs). Matches the backend's getPaginationParamsDefaultToMax(c, 20).
+  // Album-items is NOT one of these: it uses getPublicPaginationParams(c, 100), so
+  // its server-side default is 10 and callers should pass an explicit `limit`.
   const LIST_DEFAULT_LIMIT = PAGINATION.LIST_DEFAULT_LIMIT;
 
   // ============================================================================
@@ -267,7 +420,8 @@ export function createCmsClient(config: CmsClientConfig) {
 
   function fetchPages(
     siteId: string,
-    params: { page?: number } = {},
+    /** `limit` defaults to 10 server-side, max 20. */
+    params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<PageListItem>> {
     const query = buildQueryString(params);
@@ -305,7 +459,7 @@ export function createCmsClient(config: CmsClientConfig) {
    * The site's single published page of a given type, with its sections — the
    * same payload as `fetchPageByUrl`. Prefer this when you know which kind of
    * page you want but not its url, since an editor can rename the url at any
-   * time. Returns null when the site has no published page of that type.
+   * time. Throws `CmsError` (404) when the site has no published page of that type.
    */
   async function fetchPageByType(
     siteId: string,
@@ -501,7 +655,11 @@ export function createCmsClient(config: CmsClientConfig) {
       page?: number;
       limit?: number;
       search?: string;
-      /** Only these albums (array or comma-separated ids), e.g. for an album-group section. */
+      /**
+       * Only these albums (array or comma-separated ids), e.g. for an album-group
+       * section. At most MAX_ID_LIST (20) ids, more is a 400. An empty list
+       * matches no albums — omit the param to get all of them.
+       */
       ids?: string | string[];
     } = {},
     options?: FetchOptions,
@@ -534,8 +692,11 @@ export function createCmsClient(config: CmsClientConfig) {
     params: {
       /** Album slug. */
       album?: string;
-      /** Comma-separated list of album IDs (e.g., "id1,id2") */
-      album_id?: string;
+      /**
+       * Album ids (array or comma-separated). At most MAX_ID_LIST (20), more is
+       * a 400. An empty list matches no items — omit the param instead.
+       */
+      album_id?: string | string[];
       page?: number;
       /**
        * Defaults to 10 server-side (max 100) — pass an explicit value to get a
@@ -545,7 +706,7 @@ export function createCmsClient(config: CmsClientConfig) {
     },
     options?: FetchOptions,
   ): Promise<PaginatedResponse<AlbumItem>> {
-    const query = buildQueryString(params);
+    const query = buildQueryString({ ...params, album_id: joinIds(params.album_id) });
     return cmsFetchPaginated<AlbumItem>(
       `/api/public/cms/${siteId}/albums/album-items/?${query}`,
       {
@@ -704,10 +865,9 @@ export function createCmsClient(config: CmsClientConfig) {
   /**
    * Submit the contact form.
    *
-   * Unlike the read methods, this THROWS `CmsError` on a rejection rather than
-   * returning null — a form needs to tell "captcha failed, reset the widget"
-   * (403) apart from "rate limited" (429) and a network blip, and a single
-   * `null` cannot carry that. `error.status` holds the HTTP status.
+   * Throws `CmsError` on a rejection, like every method here: `error.status`
+   * tells "captcha failed, reset the widget" (403) apart from "rate limited"
+   * (429, with `error.retryAfter`) and a network blip.
    *
    * Pass `attachments` to send files; the request then goes out as multipart
    * instead of JSON. Caps are enforced server-side and pre-checked here.
@@ -738,8 +898,15 @@ export function createCmsClient(config: CmsClientConfig) {
           url,
         );
       }
+      // The API detects the type from the file's bytes, so only reject a type
+      // the browser actually declared. An empty or generic one (a .docx on some
+      // systems) is left for the server to judge.
       for (const f of attachments) {
-        if (!CONTACT_ATTACHMENT_MIME_ALLOWLIST.includes(f.type)) {
+        if (
+          f.type &&
+          f.type !== "application/octet-stream" &&
+          !CONTACT_ATTACHMENT_MIME_ALLOWLIST.includes(f.type.split(";")[0].trim())
+        ) {
           throw new CmsError(
             `Attachment type not allowed: ${f.type || "unknown"}`,
             400,
@@ -769,37 +936,37 @@ export function createCmsClient(config: CmsClientConfig) {
     // the submission, and the one retryable-looking status here (503, a
     // misconfigured Turnstile) is a deployment fault that will not self-heal —
     // retrying it just burns the 1-per-60s write budget.
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        ...options,
-        method: "POST",
-        headers: { ...headers, ...(options?.headers as Record<string, string>) },
-        body,
-      });
-    } catch (error) {
-      throw new CmsError(
-        error instanceof Error ? error.message : "Network request failed",
-        undefined,
-        url,
-      );
-    }
+    // A timed-out submission may still have reached the CMS, so do not resend it
+    // automatically either.
+    const { timeoutMs = DEFAULT_SUBMIT_TIMEOUT_MS, ...fetchOptions } = options ?? {};
+    return withTimeout(
+      async () => {
+        let response: Response;
+        try {
+          response = await fetch(url, {
+            ...fetchOptions,
+            method: "POST",
+            headers: { ...headers, ...(fetchOptions.headers as Record<string, string>) },
+            body,
+          });
+        } catch (error) {
+          throw new CmsError(
+            error instanceof Error ? error.message : "Network request failed",
+            undefined,
+            url,
+          );
+        }
 
-    if (!response.ok) {
-      // The API answers errors as { message }; fall back to the status text
-      // when the body is not JSON (a proxy error page, say).
-      let message = `Request failed with status ${response.status}`;
-      try {
-        const parsed = (await response.json()) as { message?: string };
-        if (parsed?.message) message = parsed.message;
-      } catch {
-        // keep the fallback
-      }
-      throw new CmsError(message, response.status, url);
-    }
+        if (!response.ok) {
+          throw await errorFromResponse(response, url);
+        }
 
-    const result = await response.json();
-    return (result.data ?? result) as Contact;
+        const result = await readJson(response, url);
+        return (result.data ?? result) as Contact;
+      },
+      timeoutMs,
+      url,
+    );
   }
 
   function fetchFaqs(
@@ -826,6 +993,7 @@ export function createCmsClient(config: CmsClientConfig) {
   // Redirects
   // ============================================================================
 
+  /** All enabled redirects. Throws `CmsError` 403 when redirects are turned off for the site. */
   async function fetchRedirects(
     siteId: string,
     options?: FetchOptions,
@@ -841,6 +1009,10 @@ export function createCmsClient(config: CmsClientConfig) {
     return result ?? [];
   }
 
+  /**
+   * The redirect matching `sourcePath`. Throws `CmsError` 404 when nothing
+   * matches and 403 when redirects are turned off for the site.
+   */
   function resolveRedirect(
     siteId: string,
     sourcePath: string,
@@ -856,12 +1028,22 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
-  function reportRedirect404(
+  /**
+   * Log a 404 hit. `referrer` is kept only when it is an absolute http(s) URL.
+   * The root path and paths over 2048 characters are never logged, so they
+   * resolve to null without a request instead of drawing a 400.
+   */
+  async function reportRedirect404(
     siteId: string,
     sourcePath: string,
     referrer?: string,
     options?: FetchOptions,
   ): Promise<null> {
+    const trimmed = sourcePath.trim();
+    if (!trimmed || /^\/+$/.test(trimmed) || trimmed.length > MAX_404_LOG_PATH_LENGTH) {
+      return null;
+    }
+
     const headers = {
       "Content-Type": "application/json",
       ...(options?.headers ?? {}),
@@ -907,12 +1089,19 @@ export function createCmsClient(config: CmsClientConfig) {
       page?: number;
       limit?: number;
       search?: string;
-      ordering?: string;
+      /** Defaults to `order`. */
+      ordering?: "order" | "-order" | "name" | "-name";
+      /** A parent's id for its children, or `null` for top-level categories only. */
       parent_id?: string | null;
     } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<ProductCategory>> {
-    const query = buildQueryString(params);
+    // buildQueryString drops null, but the API reads the literal "null" as
+    // "no parent" — without it every category comes back.
+    const query = buildQueryString({
+      ...params,
+      parent_id: params.parent_id === null ? "null" : params.parent_id,
+    });
     return cmsFetchPaginated<ProductCategory>(
       `/api/public/store/${siteId}/categories/${query ? `?${query}` : ""}`,
       {
@@ -951,7 +1140,8 @@ export function createCmsClient(config: CmsClientConfig) {
       page?: number;
       limit?: number;
       search?: string;
-      ordering?: string;
+      /** Defaults to name ascending. */
+      ordering?: "name" | "-name";
     } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<ProductBrand>> {
@@ -972,7 +1162,7 @@ export function createCmsClient(config: CmsClientConfig) {
     params: {
       page?: number;
       limit?: number;
-      /** One id, or several (array or comma-separated); includes subcategories. */
+      /** One id, or several (array or comma-separated, at most MAX_ID_LIST); includes subcategories. */
       category_id?: string | string[];
       sort?: "name_asc" | "name_desc";
       availability?: "in_stock" | "out_of_stock";
@@ -996,12 +1186,13 @@ export function createCmsClient(config: CmsClientConfig) {
       page?: number;
       limit?: number;
       search?: string;
-      /** One id, or several (array or comma-separated); includes subcategories. */
+      /** One id, or several (array or comma-separated, at most MAX_ID_LIST); includes subcategories. */
       category_id?: string | string[];
       tag_id?: string;
-      /** One id, or several (array or comma-separated). */
+      /** One id, or several (array or comma-separated, at most MAX_ID_LIST). */
       brand_id?: string | string[];
       is_featured?: "true" | "false";
+      /** `sort`, `min_price` and `max_price` are ignored when the store hides prices (newest first instead). */
       sort?: "price_asc" | "price_desc";
       min_price?: number;
       max_price?: number;
@@ -1041,9 +1232,9 @@ export function createCmsClient(config: CmsClientConfig) {
     tag: string,
     params: { page?: number; limit?: number } = {},
     options?: FetchOptions,
-  ): Promise<PaginatedResponse<{ item: unknown; product: Product }>> {
+  ): Promise<PaginatedResponse<ProductTagMatch>> {
     const query = buildQueryString({ tag, ...params });
-    return cmsFetchPaginated<{ item: unknown; product: Product }>(
+    return cmsFetchPaginated<ProductTagMatch>(
       `/api/public/store/${siteId}/products/by-tag/${query ? `?${query}` : ""}`,
       {
         revalidate: CACHE.SHORT,
@@ -1058,13 +1249,15 @@ export function createCmsClient(config: CmsClientConfig) {
     params: {
       page?: number;
       limit?: number;
+      /** @deprecated Ignored by the API — collections are not searchable. */
       search?: string;
-      /** Comma-separated list of collection IDs (e.g., "id1,id2") */
-      id?: string;
+      /** Only these collections (array or comma-separated ids). At most MAX_ID_LIST (20), more is a 400. */
+      id?: string | string[];
     } = {},
     options?: FetchOptions,
   ): Promise<PaginatedResponse<Collection>> {
-    const query = buildQueryString(params);
+    const { search: _search, ...rest } = params;
+    const query = buildQueryString({ ...rest, id: joinIds(params.id) });
     return cmsFetchPaginated<Collection>(
       `/api/public/store/${siteId}/collections/${query ? `?${query}` : ""}`,
       {
@@ -1081,7 +1274,7 @@ export function createCmsClient(config: CmsClientConfig) {
     params: {
       page?: number;
       limit?: number;
-      /** One id, or several (array or comma-separated); includes subcategories. */
+      /** One id, or several (array or comma-separated, at most MAX_ID_LIST); includes subcategories. */
       category_id?: string | string[];
       sort?: "name_asc" | "name_desc";
       availability?: "in_stock" | "out_of_stock";
@@ -1107,7 +1300,7 @@ export function createCmsClient(config: CmsClientConfig) {
     params: {
       page?: number;
       limit?: number;
-      /** One id, or several (array or comma-separated); includes subcategories. */
+      /** One id, or several (array or comma-separated, at most MAX_ID_LIST); includes subcategories. */
       category_id?: string | string[];
       sort?: "name_asc" | "name_desc";
       availability?: "in_stock" | "out_of_stock";
@@ -1127,6 +1320,11 @@ export function createCmsClient(config: CmsClientConfig) {
     );
   }
 
+  /**
+   * Place an order (at most MAX_ORDER_ITEMS line items). On a store that hides
+   * prices the returned order carries no amounts. A 400 carries per-field
+   * details in `error.errors`.
+   */
   function placeOrder(
     siteId: string,
     payload: PlaceOrderPayload,

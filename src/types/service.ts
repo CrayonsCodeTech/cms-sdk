@@ -7,7 +7,8 @@ export interface Service {
   title: string;
   slug: string;
   excerpt?: string | null;
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string;
   image_url?: string | null;
   image_alt?: string | null;
   icon?: string | null;

@@ -82,7 +82,8 @@ export interface ProductListItem {
 }
 
 export interface Product extends Omit<ProductListItem, "variants"> {
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string;
   needs_shipping: boolean;
   metadata: unknown;
   deleted_at: string | null;
@@ -91,4 +92,9 @@ export interface Product extends Omit<ProductListItem, "variants"> {
   // Optional: CMS backends that predate embedded refs omit these
   category?: ProductRef | null;
   brand?: ProductRef | null;
+}
+/** One `fetchProductsByTag` row: the tag link and the tagged product. */
+export interface ProductTagMatch {
+  item: { id: string; product_id: string; tag_id: string };
+  product: Product;
 }

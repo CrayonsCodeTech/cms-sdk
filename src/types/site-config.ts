@@ -1,3 +1,5 @@
+import type { SiteTemplate } from "../constants/siteTemplates";
+
 export interface Branding {
   logo_primary?: string;
   logo_dark?: string;
@@ -11,7 +13,7 @@ export interface SocialLink {
 }
 
 export interface LocationConfig {
-  location: string[];
+  location?: string[];
   google_maps_url?: string;
   embed_map_url?: string;
 }
@@ -43,6 +45,7 @@ export interface SiteConfig {
   site_id: string;
   site_name: string;
   site_description: string | null;
+  site_template: SiteTemplate;
   logo: Branding;
   contact: ContactConfig;
 }

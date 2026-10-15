@@ -2,7 +2,8 @@ export interface Faq {
   id: string;
   group_id: string;
   question: string;
-  answer: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  answer: string;
   order: number;
   is_published: boolean;
   created_at: string;

@@ -13,6 +13,8 @@ export interface ShippingAddress {
   city: string;
   zip: string;
   country: string;
+  /** Any other address fields (line2, state, ...) are stored and returned as-is. */
+  [key: string]: string | undefined;
 }
 
 export interface OrderItem {
@@ -23,8 +25,10 @@ export interface OrderItem {
   variant_name: string | null;
   thumbnail_url: string | null;
   quantity: number;
-  unit_price: number;
-  total_price: number;
+  /** Absent when the store hides prices. */
+  unit_price?: number;
+  /** Absent when the store hides prices. */
+  total_price?: number;
   discount: number | null;
   created_at: string;
   updated_at: string;
@@ -38,8 +42,10 @@ export interface Order {
   customer_phone: string | null;
   shipping_address: ShippingAddress;
   status: OrderStatus;
-  total_amount: number;
-  discount: number | null;
+  /** Absent when the store hides prices. */
+  total_amount?: number;
+  /** Always null today; absent when the store hides prices. */
+  discount?: number | null;
   notes: string | null;
   metadata: unknown;
   /** False for inquiry-mode orders (site had price_visibility off) — stock was neither checked nor decremented. */
@@ -57,9 +63,10 @@ export interface PlaceOrderPayload {
   items: Array<{
     product_variant_id: string;
     quantity: number;
-  }>;
+  }>; // at most MAX_ORDER_ITEMS (50)
   customer_phone?: string | null;
   notes?: string | null;
+  /** @deprecated Ignored — the API always stores no discount. */
   discount?: number | null;
   /** Flat string map only — the API validates `Record<string, string>` on a
    *  strict schema, so nested objects, numbers and arrays are rejected (400). */

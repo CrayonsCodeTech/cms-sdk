@@ -6,7 +6,8 @@ export interface FaqGroup {
   id: string;
   site_id: string;
   title: string;
-  description: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string | null;
   order: number;
   faqs: Faq[];
   seo?: ProductSEO | null;
