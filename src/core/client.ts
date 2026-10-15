@@ -132,6 +132,24 @@ async function errorFromResponse(response: Response, url: string): Promise<CmsEr
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// A 2xx whose body is not JSON (a proxy's HTML error page, say) is a server
+// fault, not a network one: report it with its status, as a CmsError, so it is
+// not retried and `instanceof CmsError` still catches it.
+async function readJson(response: Response, url: string): Promise<any> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new CmsError(`Invalid JSON response (${response.status})`, response.status, url);
+  }
+}
+
+// Drop an unread body before retrying, so it does not hold a connection
+// (Workers allows six open at once) until it is garbage-collected.
+async function discardBody(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => {});
+}
+
 // Races `run` against a timer instead of handing fetch an AbortSignal: Next.js
 // skips its per-render request dedupe for any fetch that carries a signal, so a
 // default signal would double the identical page and site-config fetches a
@@ -198,6 +216,7 @@ export function createCmsClient(config: CmsClientConfig) {
             if (!response.ok) {
               // Retry on transient server errors (502, 503, 504)
               if (attempt < retries && RETRY_STATUSES.includes(response.status)) {
+                await discardBody(response);
                 return RETRY;
               }
 
@@ -209,7 +228,7 @@ export function createCmsClient(config: CmsClientConfig) {
               return { value: null };
             }
 
-            const result = await response.json();
+            const result = await readJson(response, url);
             return { value: (result.data ?? result) as T };
           },
           timeoutMs,
@@ -270,13 +289,14 @@ export function createCmsClient(config: CmsClientConfig) {
 
             if (!response.ok) {
               if (attempt < retries && RETRY_STATUSES.includes(response.status)) {
+                await discardBody(response);
                 return RETRY;
               }
 
               throw await errorFromResponse(response, url);
             }
 
-            return { value: (await response.json()) as PaginatedResponse<T> };
+            return { value: (await readJson(response, url)) as PaginatedResponse<T> };
           },
           timeoutMs,
           url,
@@ -918,7 +938,7 @@ export function createCmsClient(config: CmsClientConfig) {
           throw await errorFromResponse(response, url);
         }
 
-        const result = await response.json();
+        const result = await readJson(response, url);
         return (result.data ?? result) as Contact;
       },
       timeoutMs,
