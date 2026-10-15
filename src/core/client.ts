@@ -62,11 +62,28 @@ export interface CmsClientConfig {
   timeoutMs?: number;
 }
 
+// Query values carry what visitors typed (search terms, the requested path), and
+// errors end up in logs and error trackers. Keep the parameter names, which say
+// which call failed, and drop the values: `/blog/?search=…&page=…`.
+function redactUrl(url: string): string {
+  const queryStart = url.indexOf("?");
+  if (queryStart === -1) return url;
+  const names = url
+    .slice(queryStart + 1)
+    .split("&")
+    .filter(Boolean)
+    .map((pair) => `${pair.split("=")[0]}=…`);
+  return names.length ? `${url.slice(0, queryStart)}?${names.join("&")}` : url.slice(0, queryStart);
+}
+
 export class CmsError extends Error {
+  /** The request URL with query values removed (`?search=…`), so it is safe to log. */
+  public url?: string;
+
   constructor(
     public message: string,
     public status?: number,
-    public url?: string,
+    url?: string,
     /** Per-field validation details from a 400 (`body.errors`), when the API sent them. */
     public errors?: unknown,
     /** Seconds to wait before retrying, from a 429's `Retry-After` header. */
@@ -76,6 +93,7 @@ export class CmsError extends Error {
   ) {
     super(message);
     this.name = "CmsError";
+    this.url = url === undefined ? undefined : redactUrl(url);
   }
 }
 
@@ -97,7 +115,7 @@ const MAX_404_LOG_PATH_LENGTH = 2048;
 // The API answers errors as { message, errors? }; fall back to the status when
 // the body is not JSON (a proxy error page, say).
 async function errorFromResponse(response: Response, url: string): Promise<CmsError> {
-  let message = `API request failed: ${response.status} ${url}`;
+  let message = `API request failed: ${response.status} ${redactUrl(url)}`;
   let errors: unknown;
   try {
     const body = await response.json();
@@ -213,7 +231,8 @@ export function createCmsClient(config: CmsClientConfig) {
 
         const msg =
           error instanceof Error ? error.message : String(error);
-        throw new CmsError(`Request failed: ${msg}`, undefined, url);
+        // Some runtimes put the request URL in the error text; redact it there too.
+        throw new CmsError(`Request failed: ${msg.split(url).join(redactUrl(url))}`, undefined, url);
       }
     }
 
@@ -278,7 +297,8 @@ export function createCmsClient(config: CmsClientConfig) {
 
         const msg =
           error instanceof Error ? error.message : String(error);
-        throw new CmsError(`Request failed: ${msg}`, undefined, url);
+        // Some runtimes put the request URL in the error text; redact it there too.
+        throw new CmsError(`Request failed: ${msg.split(url).join(redactUrl(url))}`, undefined, url);
       }
     }
 

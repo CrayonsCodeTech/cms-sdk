@@ -3350,7 +3350,7 @@ try {
 }
 ```
 
-`CmsError` has `message` (the CMS's `message` field when the response had one), `status` (absent for network errors and timeouts), `timedOut` (`true` when the request gave up after `timeoutMs`) and `url` (the full request URL, query string included, so avoid logging it where query strings may hold personal data).
+`CmsError` has `message` (the CMS's `message` field when the response had one), `status` (absent for network errors and timeouts), `timedOut` (`true` when the request gave up after `timeoutMs`) and `url` (the request URL with query **values** removed, e.g. `…/blog/?search=…&page=…`, so search terms and visitor-typed paths never reach your logs; the path and parameter names are kept). Errors never include request bodies.
 
 ## FAQ & Common Issues
 
