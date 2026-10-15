@@ -89,8 +89,7 @@ NEXT_PUBLIC_CMS_SITE_ID=your-site-id-here
 It is recommended to create a singleton instance of the CMS client in your project (e.g., `lib/cms.ts`).
 
 ```typescript
-import { CmsError, createCmsClient } from "@crayonscodetech/cms-sdk";
-import type { PaginatedResponse } from "@crayonscodetech/cms-sdk";
+import { createCmsClient } from "@crayonscodetech/cms-sdk";
 
 export const cms = createCmsClient({
   baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL || "https://api.example.com",
@@ -100,47 +99,13 @@ export const cms = createCmsClient({
 });
 
 export const SITE_ID = process.env.NEXT_PUBLIC_CMS_SITE_ID || "";
-
-/**
- * Read methods throw a `CmsError` for any non-2xx response, a 404 included.
- * Wrap a read in `orNull()` when "not there" is a normal outcome: 404 (missing)
- * and 403 (a feature such as the store or redirects is switched off for the
- * site) resolve to `null`. Every other error still throws.
- */
-export async function orNull<T>(request: Promise<T | null>): Promise<T | null> {
-  try {
-    return await request;
-  } catch (error) {
-    if (error instanceof CmsError && (error.status === 404 || error.status === 403)) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-/**
- * Pages through a list method until an item matches. Use it where the API has
- * no by-slug lookup; public list
- * endpoints return at most 20–40 items per page, so a single page can miss it.
- */
-export async function findInPages<T>(
-  fetchPage: (page: number) => Promise<PaginatedResponse<T>>,
-  match: (item: T) => boolean,
-): Promise<T | null> {
-  for (let page = 1; ; page++) {
-    const { data, pagination } = await fetchPage(page);
-    const hit = data.find(match);
-    if (hit) return hit;
-    if (data.length === 0 || page * pagination.limit >= pagination.total) return null;
-  }
-}
 ```
 
 ### 3. Usage in Components
 
 #### Conditional Rendering — Header & Footer Inner Data
 
-`fetchHeader` and `fetchFooter` throw a `CmsError` when the request fails, including a 404 when the site has none yet. Fetch them as `orNull(cms.fetchHeader(SITE_ID))` (see [Initialization](#2-initialization)) so a missing header or footer is `null` instead of an error page, and render nothing in that case. Inside your components, guard each field individually since arrays may be empty and optional fields may be absent.
+`fetchHeader` and `fetchFooter` throw a `CmsError` when the request fails, with `status` `404` when the site has none yet. Catch that 404 and render nothing (see the layout example in [Error Handling](#error-handling)); let any other status reach your error page. Inside your components, guard each field individually since arrays may be empty and optional fields may be absent.
 
 **SiteHeader example:**
 
@@ -307,7 +272,7 @@ const { site_name, logo, contact } = siteConfig;
 }
 ```
 
-> Fetch it as `orNull(cms.fetchSiteConfig(SITE_ID))`: `fetchSiteConfig` throws a `CmsError` if the request fails, and `orNull` turns a missing config into `null`. Guard it at the layout level and pass it down only if it exists.
+> `fetchSiteConfig` throws a `CmsError` if the request fails, with `status` `404` when the site has no config yet. Catch that 404 at the layout level, as in the layout example in [Error Handling](#error-handling), and pass the config down only if it exists.
 
 #### 4. Icons
 
@@ -340,6 +305,8 @@ For production-grade applications, we recommend a declarative approach using a *
 
 Map CMS `page_type` strings to their corresponding React components. This centralizes your UI mapping.
 
+The page types are `home`, `about`, `contact`, `services`, `blog`, `team`, `gallery`, `events`, `clients-partners`, `testimonial`, `faq` and `custom` (the SDK exports them as `allPageTypes`). Every type except `custom` is a singleton: a site has at most one page of it. A type with no entry below falls back to `CustomPage`, which just renders the page's sections. There is no `products` page type: store routes are matched before CMS pages (see [Route Structure](#route-structure) under Store).
+
 ```tsx
 // lib/cms-registry.ts
 import HomePage from "@/components/pages/HomePage";
@@ -351,16 +318,15 @@ import GalleryPage from "@/components/pages/GalleryPage";
 import TeamPage from "@/components/pages/TeamPage";
 import ContactPage from "@/components/pages/ContactPage";
 import CustomPage from "@/components/pages/CustomPage";
-import ProductsPage from "@/components/pages/ProductsPage";
 
-// Detail views (sub-pages)
+// Detail views (sub-pages), each fetched by slug
 import BlogDetailPage from "@/components/pages/BlogDetailPage";
 import ServiceDetailPage from "@/components/pages/ServiceDetailPage";
 import EventDetailPage from "@/components/pages/EventDetailPage";
 import GalleryDetailPage from "@/components/pages/GalleryDetailPage";
 import TeamMemberDetailPage from "@/components/pages/TeamMemberDetailPage";
 import TeamCategoryPage from "@/components/pages/TeamCategoryPage";
-import ProductDetailPage from "@/components/pages/ProductDetailPage";
+import BrandGroupDetailPage from "@/components/pages/BrandGroupDetailPage";
 
 export const PAGE_COMPONENT_MAP: Record<string, any> = {
   home: HomePage,
@@ -372,19 +338,18 @@ export const PAGE_COMPONENT_MAP: Record<string, any> = {
   team: TeamPage,
   contact: ContactPage,
   custom: CustomPage,
-  products: ProductsPage,
 };
 
 // Maps parent page type to its detail component
 export const DETAIL_COMPONENT_MAP: Record<string, any> = {
-  blog: BlogDetailPage,
-  services: ServiceDetailPage,
-  events: EventDetailPage,
-  gallery: GalleryDetailPage,
-  products: ProductDetailPage,
+  blog: BlogDetailPage, // fetchBlogBySlug
+  services: ServiceDetailPage, // fetchServiceBySlug
+  events: EventDetailPage, // fetchEventBySlug
+  gallery: GalleryDetailPage, // fetchAlbumBySlug
+  "clients-partners": BrandGroupDetailPage, // fetchBrandGroupBySlug
   team: {
-    member: TeamMemberDetailPage,
-    category: TeamCategoryPage,
+    category: TeamCategoryPage, // fetchCategoryBySlug
+    member: TeamMemberDetailPage, // fetchTeamMemberBySlug
   },
 };
 ```
@@ -395,13 +360,24 @@ This utility determines if a URL path is an exact CMS page or a "Detail" page (e
 
 ```tsx
 // lib/cms-router.ts
-import { cms, orNull, SITE_ID } from "./cms";
+import { CmsError, type Page } from "@crayonscodetech/cms-sdk";
+import { cms, SITE_ID } from "./cms";
+
+// fetchPageByUrl throws a CmsError with status 404 when no page has this URL.
+// Here that is a normal outcome (the detail-page fallback below handles it);
+// every other status is a real failure and is rethrown.
+async function findPage(urlPath: string): Promise<Page | null> {
+  try {
+    return await cms.fetchPageByUrl(SITE_ID, urlPath);
+  } catch (error) {
+    if (error instanceof CmsError && error.status === 404) return null;
+    throw error;
+  }
+}
 
 export async function resolveCmsRoute(slug: string[]) {
   const urlPath = slug.length > 0 ? `/${slug.join("/")}` : "/";
-  // fetchPageByUrl throws on 404; orNull turns "no such page" into null so the
-  // detail-page fallback below can run.
-  const exactPage = await orNull(cms.fetchPageByUrl(SITE_ID, urlPath));
+  const exactPage = await findPage(urlPath);
 
   if (exactPage) return { type: "page" as const, data: exactPage };
 
@@ -410,7 +386,7 @@ export async function resolveCmsRoute(slug: string[]) {
   if (slug.length > 0) {
     for (let i = slug.length - 1; i >= 0; i--) {
       const parentPath = "/" + slug.slice(0, i).join("/");
-      const parentPage = await orNull(cms.fetchPageByUrl(SITE_ID, parentPath || "/"));
+      const parentPage = await findPage(parentPath || "/");
 
       if (parentPage) {
         return {
@@ -458,15 +434,17 @@ export default async function CatchAllPage({
     const Component = DETAIL_COMPONENT_MAP[resolution.parentType];
     if (!Component) notFound();
 
-    // Special handling for nested detail types (like Team)
+    // Team nests two levels: /team/[category] and /team/[category]/[member]
     if (resolution.parentType === "team") {
       if (resolution.slug.length === 1) {
         return (
           <Component.category
             params={Promise.resolve({ category: resolution.slug[0] })}
+            parentUrl={resolution.parentUrl}
           />
         );
       }
+      if (resolution.slug.length !== 2) notFound();
       return (
         <Component.member
           params={Promise.resolve({
@@ -476,6 +454,9 @@ export default async function CatchAllPage({
         />
       );
     }
+
+    // Every other detail type is one level deep: /blog/a/b is not a page
+    if (resolution.slug.length !== 1) notFound();
 
     return (
       <Component
@@ -649,26 +630,27 @@ export function RenderSections({ sections }: { sections: Section[] }) {
 
 Several section types only carry **display text** (headings, subtitles) in `section.content`. The actual entity data must be fetched separately and passed into the section component. This is the same pattern as services, blogs, and events — just applied inside individual section components.
 
-| Section name     | `type` discriminant  | Content type             | Primary table/entity          | API call(s) needed                                                                          |
-| ---------------- | -------------------- | ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------- |
-| Hero             | `"hero"`             | `HeroContent[]`          | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Custom           | `"custom"`           | `CustomContent`          | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Call to Action   | `"cta"`              | `CTAContent`             | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Rich Content     | `"rich-content"`     | `RichContentSection`     | `page.sections` (from `page`) | None — content is inline                                                                    |
-| About            | `"about"`            | `AboutSection`           | `page.sections` + `about-us`  | `fetchAboutUs(siteId)` for profile/vision/mission/stats                                     |
-| Multi Value      | `"multi-value"`      | `MultiValueSection`      | `page.sections` (from `page`) | None — content is inline                                                                    |
-| Services         | `"service"`          | `ServicesSection`        | `services`                    | `fetchServices(siteId)`                                                                     |
-| Testimonials     | `"testimonial"`      | `TestimonialsSection`    | `testimonials`                | `fetchTestimonials(siteId, { type })` — use `content.type` to filter                                                      |
-| Team             | `"team"`             | `TeamSection`            | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, { categoryId: content.team_category_id })`               |
-| FAQ              | `"faq"`              | `FaqSection`             | `faq-groups` + `faqs`         | `fetchFaqGroups(siteId)` or `fetchFaqs(siteId, { group_id: content.group_id })`                                           |
-| Clients / Brands | `"clients"`          | `ClientsSection`         | `brand-groups` + `brands`     | `fetchBrandGroups(siteId)` + `fetchBrands(siteId, { group_id: content.brand_group_id })`                                  |
-| Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbums(siteId, { ids })` + `fetchAlbumItems(siteId, { album_id })` as needed            |
-| Events           | `"event"`            | `GenericSection`         | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                              |
-| Blog             | `"blog"`             | `GenericSection`         | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                               |
-| Products         | `"products"`         | `ProductsSection`        | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter`     |
-| Collection Group | `"collection-group"` | `CollectionGroupSection` | `collections`                 | `fetchCollections(siteId, { id: content.collection_groups.join(',') })`                     |
-| Marquee          | `"marquee"`          | `MarqueeSection`         | `page.sections` (from `page`) | None — content is inline                                                                    |
-| History          | `"history"`          | `HistorySection`         | `page.sections` (from `page`) | None — content is inline                                                                    |
+| Section name     | `type` discriminant  | Content type             | Primary table/entity          | API call(s) needed                                                                                          |
+| ---------------- | -------------------- | ------------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Hero             | `"hero"`             | `HeroContent[]`          | `page.sections` (from `page`) | None — content is inline                                                                                    |
+| Custom           | `"custom"`           | `CustomContent`          | `page.sections` (from `page`) | None — content is inline                                                                                    |
+| Call to Action   | `"cta"`              | `CTAContent`             | `page.sections` (from `page`) | None — content is inline                                                                                    |
+| Rich Content     | `"rich-content"`     | `RichContentSection`     | `page.sections` (from `page`) | None — content is inline                                                                                    |
+| About            | `"about"`            | `AboutSection`           | `page.sections` + `about-us`  | `fetchAboutUs(siteId)` for profile/vision/mission/stats                                                     |
+| Multi Value      | `"multi-value"`      | `MultiValueSection`      | `page.sections` (from `page`) | None — content is inline                                                                                    |
+| Services         | `"service"`          | `ServicesSection`        | `services`                    | `fetchServices(siteId)`                                                                                     |
+| Testimonials     | `"testimonial"`      | `TestimonialsSection`    | `testimonials`                | `fetchTestimonials(siteId, { type })` — use `content.type` to filter                                        |
+| Team             | `"team"`             | `TeamSection`            | `team-members`                | `fetchTeamMembers(siteId)` / `fetchTeamMembersByCategory(siteId, { categoryId: content.team_category_id })` |
+| FAQ              | `"faq"`              | `FaqSection`             | `faq-groups` + `faqs`         | `fetchFaqs(siteId, { group_id: content.group_id })` (every FAQ when `group_id` is empty)                    |
+| Clients / Brands | `"clients"`          | `ClientsSection`         | `brand-groups` + `brands`     | `fetchBrands(siteId, { group_id: content.brand_group_id })`                                                 |
+| Gallery          | `"gallery"`          | `GallerySection`         | `albums` + `album-items`      | `fetchAlbumItems(siteId, { album_id: content.album_id })`                                                   |
+| Album Group      | `"album-group"`      | `AlbumGroupSection`      | `albums`                      | `fetchAlbums(siteId, { ids: content.album_ids })`                                                           |
+| Events           | `"event"`            | `GenericSection`         | `events`                      | `fetchEvents(siteId, { page, limit, search })`                                                              |
+| Blog             | `"blog"`             | `GenericSection`         | `blog`                        | `fetchBlogs(siteId, { page, limit, search })`                                                               |
+| Products         | `"products"`         | `ProductsSection`        | `products` / `collections`    | `fetchProducts(...)` or `fetchCollectionDetailById(...)`, depending on `content.filter`                     |
+| Collection Group | `"collection-group"` | `CollectionGroupSection` | `collections`                 | `fetchCollections(siteId, { id: content.collection_groups.join(',') })`                                     |
+| Marquee          | `"marquee"`          | `MarqueeSection`         | `page.sections` (from `page`) | None — content is inline                                                                                    |
+| History          | `"history"`          | `HistorySection`         | `page.sections` (from `page`) | None — content is inline                                                                                    |
 
 **How to handle this in section components:**
 
@@ -721,7 +703,10 @@ import { cms, SITE_ID } from "@/lib/cms";
 import type { TeamSection } from "@crayonscodetech/cms-sdk";
 
 export async function TeamSection({ content }: { content: TeamSection }) {
-  const { data: members } = await cms.fetchTeamMembers(SITE_ID);
+  // The section's category when team_category_id is set, otherwise every member.
+  const { data: members } = content.team_category_id
+    ? await cms.fetchTeamMembersByCategory(SITE_ID, { categoryId: content.team_category_id })
+    : await cms.fetchTeamMembers(SITE_ID);
 
   return (
     <section>
@@ -768,16 +753,11 @@ import { cms, SITE_ID } from "@/lib/cms";
 import type { FaqSection } from "@crayonscodetech/cms-sdk";
 
 export async function FaqSection({ content }: { content: FaqSection }) {
-  // Fetch the specific group if a group_id is set, otherwise fetch all
-  const { data: groups } = await cms.fetchFaqGroups(SITE_ID);
-
-  const targetGroup = content.group_id
-    ? groups.find((g) => g.id === content.group_id)
-    : null;
-
-  const faqs = targetGroup
-    ? targetGroup.faqs
-    : (await cms.fetchFaqs(SITE_ID)).data;
+  // The section's group when group_id is set, otherwise every FAQ. One page
+  // holds at most 20; pass { page } for more.
+  const { data: faqs } = await cms.fetchFaqs(SITE_ID, {
+    group_id: content.group_id || undefined,
+  });
 
   return (
     <section>
@@ -807,21 +787,27 @@ Different page types follow different rendering strategies. Understanding these 
 
 ### Page Fetch Map (Route -> Table/Entity -> SDK Fetch)
 
-| Route                   | Primary tables/entities           | Required fetch call(s)                                                                          |
-| ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `/` (home)              | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")`                                                                   |
-| `[[...slug]]` CMS pages | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)`                                                               |
-| `/about`                | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                                     |
-| `/services`             | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                                 |
-| `/services/[slug]`      | `services`                        | `fetchServiceBySlug(siteId, slug)`                                                              |
-| `/blog` or `/news`      | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` (or your CMS-defined base url) + `fetchBlogs(siteId, params)` |
-| `/blog/[slug]`          | `blog`                            | `fetchBlogBySlug(siteId, slug)`                                                                 |
-| `/events`               | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`                             |
-| `/events/[slug]`        | `events`                          | `fetchEventBySlug(siteId, slug)`                                                                |
-| `/gallery`              | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
-| `/gallery/[slug]`       | `albums` + `album-items`          | `fetchAlbumBySlug(siteId, slug)` + `fetchAlbumItems(siteId, { album: slug })`                   |
-| `/team/[slug]`          | `team-members`                    | `fetchTeamMemberBySlug(siteId, slug)`                                                           |
-| `/contact`              | `contact` (form submissions)      | `fetchContactConfig(siteId)` + `submitContactForm(siteId, payload, attachments?)`               |
+| Route                       | Primary tables/entities           | Required fetch call(s)                                                                          |
+| --------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `/` (home)                  | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, "/")`                                                                   |
+| `[[...slug]]` CMS pages     | `page` (+ inline `page.sections`) | `fetchPageByUrl(siteId, urlPath)`                                                               |
+| `/about`                    | `page` + `about-us`               | `fetchPageByUrl(siteId, "/about")` + `fetchAboutUs(siteId)`                                     |
+| `/services`                 | `page` + `services`               | `fetchPageByUrl(siteId, "/services")` + `fetchServices(siteId)`                                 |
+| `/services/[slug]`          | `services`                        | `fetchServiceBySlug(siteId, slug)`                                                              |
+| `/blog` or `/news`          | `page` + `blog`                   | `fetchPageByUrl(siteId, "/blog")` (or your CMS-defined base url) + `fetchBlogs(siteId, params)` |
+| `/blog/[slug]`              | `blog`                            | `fetchBlogBySlug(siteId, slug)`                                                                 |
+| `/events`                   | `page` + `events`                 | `fetchPageByUrl(siteId, "/events")` + `fetchEvents(siteId, params)`                             |
+| `/events/[slug]`            | `events`                          | `fetchEventBySlug(siteId, slug)`                                                                |
+| `/gallery`                  | `page` + `albums`                 | `fetchPageByUrl(siteId, "/gallery")` + `fetchAlbums(siteId, params)`                            |
+| `/gallery/[slug]`           | `albums` + `album-items`          | `fetchAlbumBySlug(siteId, slug)` + `fetchAlbumItems(siteId, { album: slug })`                   |
+| `/team`                     | `page` + `team-members`           | `fetchPageByUrl(siteId, "/team")` + `fetchCategories(siteId)` / `fetchTeamMembers(siteId)`      |
+| `/team/[category]`          | `categories` (+ its `members`)    | `fetchCategoryBySlug(siteId, category)`                                                         |
+| `/team/[category]/[member]` | `team-members`                    | `fetchTeamMemberBySlug(siteId, member)` (+ `fetchCategoryBySlug` to check the member belongs)   |
+| `/clients-partners`         | `page` + `brand-groups`           | `fetchPageByUrl(siteId, "/clients-partners")` + `fetchBrandGroups(siteId)`                      |
+| `/clients-partners/[slug]`  | `brand-groups` (+ its `brands`)   | `fetchBrandGroupBySlug(siteId, slug)`                                                           |
+| `/contact`                  | `contact` (form submissions)      | `fetchContactConfig(siteId)` + `submitContactForm(siteId, payload, attachments?)`               |
+
+Base URLs such as `/team` or `/clients-partners` are whatever the CMS page's `url` is; the catch-all router finds the parent page by walking up the path, so the detail routes follow it. Each detail route is **one by-slug call**: do not fetch a list and search it. Store routes (products, categories, brands, collections) are in [Route Structure](#route-structure).
 
 ### Home Page — Section Rendering with Targeting
 
@@ -893,10 +879,10 @@ About pages usually combine:
 
 ```tsx
 // components/pages/AboutPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import SafeHtml from "@/components/safe-html"; // defined under "Rich Text / HTML Fields"
-import type { Page, SiteConfig } from "@crayonscodetech/cms-sdk";
+import { CmsError, type Page, type SiteConfig } from "@crayonscodetech/cms-sdk";
 
 export default async function AboutPage({
   page,
@@ -905,7 +891,12 @@ export default async function AboutPage({
   page: Page;
   site?: SiteConfig | null;
 }) {
-  const about = await orNull(cms.fetchAboutUs(SITE_ID));
+  const about = await cms.fetchAboutUs(SITE_ID).catch((error) => {
+    // 404: the site has no About Us data yet. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  // Only narrows the type: reads never resolve to null (see Error Handling).
   if (!about) notFound();
 
   const aboutSection = page.sections.find((s) => s.type === "about");
@@ -997,8 +988,9 @@ export default async function ServicesPage({ page }: { page: Page }) {
 
 ```tsx
 // components/pages/ServiceDetailPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
 import { RenderSections } from "@/components/render-sections";
 import SafeHtml from "@/components/safe-html";
 
@@ -1010,9 +1002,12 @@ export default async function ServiceDetailPage({
   parentUrl?: string;
 }) {
   const { slug } = await params;
-  const service = await orNull(cms.fetchServiceBySlug(SITE_ID, slug));
-
-  if (!service) notFound();
+  const service = await cms.fetchServiceBySlug(SITE_ID, slug).catch((error) => {
+    // 404: no service with this slug. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!service) notFound(); // narrows the type only
 
   return (
     <article>
@@ -1100,8 +1095,9 @@ const { data: categories } = await cms.fetchCategories(SITE_ID);
 
 ```tsx
 // components/pages/BlogDetailPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
 import { RenderSections } from "@/components/render-sections";
 import SafeHtml from "@/components/safe-html";
 
@@ -1111,8 +1107,12 @@ export default async function BlogDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const full = await orNull(cms.fetchBlogBySlug(SITE_ID, slug));
-  if (!full) notFound();
+  const full = await cms.fetchBlogBySlug(SITE_ID, slug).catch((error) => {
+    // 404: no published blog with this slug. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!full) notFound(); // narrows the type only
 
   return (
     <article>
@@ -1183,8 +1183,9 @@ export default async function EventsPage({
 
 ```tsx
 // components/pages/EventDetailPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
 import { RenderSections } from "@/components/render-sections";
 import SafeHtml from "@/components/safe-html";
 
@@ -1194,9 +1195,12 @@ export default async function EventDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const event = await orNull(cms.fetchEventBySlug(SITE_ID, slug));
-
-  if (!event) notFound();
+  const event = await cms.fetchEventBySlug(SITE_ID, slug).catch((error) => {
+    // 404: no event with this slug. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!event) notFound(); // narrows the type only
 
   return (
     <article>
@@ -1263,8 +1267,10 @@ Fetch the album with `fetchAlbumBySlug` and its photos with `fetchAlbumItems` (d
 
 ```tsx
 // components/pages/GalleryDetailPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { RenderSections } from "@/components/render-sections";
 import SafeHtml from "@/components/safe-html";
 
 export default async function AlbumDetailPage({
@@ -1273,10 +1279,14 @@ export default async function AlbumDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const album = await orNull(cms.fetchAlbumBySlug(SITE_ID, slug));
+  const album = await cms.fetchAlbumBySlug(SITE_ID, slug).catch((error) => {
+    // 404: no album with this slug. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!album) notFound(); // narrows the type only
 
-  if (!album) notFound();
-
+  // 100 is the most one page holds; pass { page } to show larger albums in full.
   const { data: items } = await cms.fetchAlbumItems(SITE_ID, { album: slug, limit: 100 });
 
   return (
@@ -1296,7 +1306,165 @@ export default async function AlbumDetailPage({
           </figure>
         ))}
       </div>
+
+      {album.extra?.sections && album.extra.sections.length > 0 && (
+        <RenderSections sections={album.extra.sections} />
+      )}
     </div>
+  );
+}
+```
+
+---
+
+### Team Page — Categories & Members
+
+The team page (`page_type: "team"`) renders its sections like any other page. Under it, the catch-all router sends one extra segment to the **category** page and two to the **member** page:
+
+- `/team/[category]`: `fetchCategoryBySlug` returns the category with its published `members` (in order) and its `extra.sections`. That is one call; do not fetch `fetchTeamMembersByCategory` as well.
+- `/team/[category]/[member]`: `fetchTeamMemberBySlug` looks the member up by slug alone, so check that `member.category_id` matches the category in the URL. Otherwise every member is reachable under every category, which duplicates content.
+
+> Sitemap: `team-members` sitemap items carry no category slug, so they cannot build `/team/[category]/[member]` URLs on their own. List `team-categories` from `fetchSitemap` and take each category's `members` from `fetchCategoryBySlug` instead.
+
+```tsx
+// components/pages/TeamCategoryPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import Link from "next/link";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { RenderSections } from "@/components/render-sections";
+import SafeHtml from "@/components/safe-html";
+
+export default async function TeamCategoryPage({
+  params,
+  parentUrl = "/team",
+}: {
+  params: Promise<{ category: string }>;
+  parentUrl?: string;
+}) {
+  const { category: slug } = await params;
+  const category = await cms.fetchCategoryBySlug(SITE_ID, slug).catch((error) => {
+    // 404: no team category with this slug. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!category) notFound(); // narrows the type only
+
+  const members = category.members ?? [];
+
+  return (
+    <section>
+      <h1>{category.name}</h1>
+      {category.description && <SafeHtml html={category.description} />}
+
+      <div className="grid">
+        {members.map((member) => (
+          <Link key={member.id} href={`${parentUrl}/${category.slug}/${member.slug}`}>
+            {member.profile_image && <img src={member.profile_image} alt={member.name} />}
+            <h2>{member.name}</h2>
+            {member.position && <p>{member.position}</p>}
+          </Link>
+        ))}
+      </div>
+
+      {category.extra?.sections && category.extra.sections.length > 0 && (
+        <RenderSections sections={category.extra.sections} />
+      )}
+    </section>
+  );
+}
+```
+
+```tsx
+// components/pages/TeamMemberDetailPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import SafeHtml from "@/components/safe-html";
+import { SocialLinks } from "@/components/social-links"; // defined under FAQ & Common Issues
+
+export default async function TeamMemberDetailPage({
+  params,
+}: {
+  params: Promise<{ category: string; slug: string }>;
+}) {
+  const { category: categorySlug, slug } = await params;
+
+  // 404: no such member / category. Any other status is a real failure.
+  const notFoundOn404 = (error: unknown): never => {
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  };
+  const [member, category] = await Promise.all([
+    cms.fetchTeamMemberBySlug(SITE_ID, slug).catch(notFoundOn404),
+    cms.fetchCategoryBySlug(SITE_ID, categorySlug).catch(notFoundOn404),
+  ]);
+  // The member must belong to the category in the URL.
+  if (!member || !category || member.category_id !== category.id) notFound();
+
+  return (
+    <article>
+      {member.profile_image && <img src={member.profile_image} alt={member.name} />}
+      <h1>{member.name}</h1>
+      {member.position && <p>{member.position}</p>}
+      {member.description && <SafeHtml html={member.description} />}
+      {member.email && <a href={`mailto:${member.email}`}>{member.email}</a>}
+      {member.location && <p>{member.location}</p>}
+      <SocialLinks socials={member.socials} />
+    </article>
+  );
+}
+```
+
+---
+
+### Clients & Partners — Brand Group Detail
+
+The clients page (`page_type: "clients-partners"`) renders its sections, where a `clients` section lists brands with `fetchBrandGroups` / `fetchBrands`. A brand group's own page, one segment under it, is a single call: `fetchBrandGroupBySlug` returns the group with its `brands` (in order) and its `extra.sections`.
+
+```tsx
+// components/pages/BrandGroupDetailPage.tsx
+import { cms, SITE_ID } from "@/lib/cms";
+import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { RenderSections } from "@/components/render-sections";
+import SafeHtml from "@/components/safe-html";
+
+export default async function BrandGroupDetailPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const group = await cms.fetchBrandGroupBySlug(SITE_ID, slug).catch((error) => {
+    // 404: no published brand group with this slug. Any other status is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!group) notFound(); // narrows the type only
+
+  return (
+    <section>
+      <h1>{group.title}</h1>
+      {group.description && <SafeHtml html={group.description} />}
+
+      <div className="grid">
+        {(group.brands ?? []).map((brand) => {
+          const logo = <img src={brand.logo_url} alt={brand.logo_alt ?? brand.name} />;
+          return brand.website_url ? (
+            <a key={brand.id} href={brand.website_url} target="_blank" rel="noopener noreferrer">
+              {logo}
+            </a>
+          ) : (
+            <div key={brand.id}>{logo}</div>
+          );
+        })}
+      </div>
+
+      {group.extra?.sections && group.extra.sections.length > 0 && (
+        <RenderSections sections={group.extra.sections} />
+      )}
+    </section>
   );
 }
 ```
@@ -1702,8 +1870,9 @@ The detail page is split into a **server component** (data fetch) and a **client
 
 ```tsx
 // components/pages/ProductDetailPage.tsx  (server component)
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
 import ProductDetailClient from "@/components/store/ProductDetailClient";
 
 export default async function ProductDetailPage({
@@ -1712,9 +1881,13 @@ export default async function ProductDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = await orNull(cms.fetchProductDetail(SITE_ID, slug));
-
-  if (!product) notFound();
+  const product = await cms.fetchProductDetail(SITE_ID, slug).catch((error) => {
+    // 404: no published product with this slug. 403 means the store is
+    // switched off for the site; like any other status, it is a real failure.
+    if (error instanceof CmsError && error.status === 404) notFound();
+    throw error;
+  });
+  if (!product) notFound(); // narrows the type only
 
   return <ProductDetailClient product={product} />;
 }
@@ -1833,8 +2006,9 @@ export default async function ProductCategoriesPage() {
 
 ```tsx
 // components/pages/CategoryProductsPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
 import Link from "next/link";
 
 interface Props {
@@ -1850,10 +2024,14 @@ export default async function CategoryProductsPage({
   const { page = "1" } = await searchParams;
 
   // One call: the category plus a page of its products, like fetchCollectionDetail
-  const category = await orNull(
-    cms.fetchProductCategoryBySlug(SITE_ID, slug, { page: Number(page), limit: 12 }),
-  );
-  if (!category) notFound();
+  const category = await cms
+    .fetchProductCategoryBySlug(SITE_ID, slug, { page: Number(page), limit: 12 })
+    .catch((error) => {
+      // 404: no category with this slug. Any other status is a real failure.
+      if (error instanceof CmsError && error.status === 404) notFound();
+      throw error;
+    });
+  if (!category) notFound(); // narrows the type only
   const products = category.items.map((item) => item.product);
 
   return (
@@ -1907,8 +2085,9 @@ export default async function BrandsPage() {
 
 ```tsx
 // components/pages/BrandProductsPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
 import Link from "next/link";
 
 interface Props {
@@ -1924,10 +2103,14 @@ export default async function BrandProductsPage({
   const { page = "1" } = await searchParams;
 
   // One call: the brand plus a page of its products, like fetchCollectionDetail
-  const brand = await orNull(
-    cms.fetchProductBrandBySlug(SITE_ID, slug, { page: Number(page), limit: 12 }),
-  );
-  if (!brand) notFound();
+  const brand = await cms
+    .fetchProductBrandBySlug(SITE_ID, slug, { page: Number(page), limit: 12 })
+    .catch((error) => {
+      // 404: no brand with this slug. Any other status is a real failure.
+      if (error instanceof CmsError && error.status === 404) notFound();
+      throw error;
+    });
+  if (!brand) notFound(); // narrows the type only
   const products = brand.items.map((item) => item.product);
 
   return (
@@ -1980,8 +2163,9 @@ export default async function CollectionsPage() {
 
 ```tsx
 // components/pages/CollectionDetailPage.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
+import { CmsError } from "@crayonscodetech/cms-sdk";
 import Link from "next/link";
 
 export default async function CollectionDetailPage({
@@ -1993,15 +2177,18 @@ export default async function CollectionDetailPage({
 }) {
   const { slug } = await params;
   const { category_id, page = "1" } = await searchParams;
-  const collection = await orNull(
-    cms.fetchCollectionDetail(SITE_ID, slug, {
+  const collection = await cms
+    .fetchCollectionDetail(SITE_ID, slug, {
       category_id,
       page: Number(page),
       limit: 20,
-    }),
-  );
-
-  if (!collection) notFound();
+    })
+    .catch((error) => {
+      // 404: no collection with this slug. Any other status is a real failure.
+      if (error instanceof CmsError && error.status === 404) notFound();
+      throw error;
+    });
+  if (!collection) notFound(); // narrows the type only
 
   // Works for both manual collections and smart collections
   const items = collection.items ?? [];
@@ -2169,13 +2356,20 @@ import { CartProvider } from "@/context/CartContext";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import CartDrawer from "@/components/store/CartDrawer";
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { cms, SITE_ID } from "@/lib/cms";
+
+// 404: the site has no header / footer / config yet, so render without it.
+const nullOn404 = (error: unknown) => {
+  if (error instanceof CmsError && error.status === 404) return null;
+  throw error;
+};
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const [header, footer, siteConfig] = await Promise.all([
-    orNull(cms.fetchHeader(SITE_ID)),
-    orNull(cms.fetchFooter(SITE_ID)),
-    orNull(cms.fetchSiteConfig(SITE_ID)),
+    cms.fetchHeader(SITE_ID).catch(nullOn404),
+    cms.fetchFooter(SITE_ID).catch(nullOn404),
+    cms.fetchSiteConfig(SITE_ID).catch(nullOn404),
   ]);
 
   return (
@@ -2308,7 +2502,7 @@ The CMS supports managed redirects (301/302/307/308) configured through the dash
 
 `resolveRedirect` supports both **manual** redirects (exact path match) and **pattern** redirects (e.g. `/blog/:slug → /news/:slug`). When a pattern matches, `ResolvedRedirect.params` contains the captured values and `destinationPath` already has them substituted in.
 
-> **Feature gate**: redirects and 404 logging are enabled **per site by a super admin** in the CMS dashboard (Super User → Sites). When a site has redirects disabled, those endpoints answer `403`, and the SDK methods **throw** a `CmsError` with `status: 403`. `resolveRedirect` also throws a `CmsError` with `status: 404` when no redirect matches the path, which is the normal case for most requests. The examples below handle both: `orNull()` (see [Initialization](#2-initialization)) turns a 404 or 403 into `null`, so the middleware falls through to normal rendering, and the 404 logger swallows its rejection.
+> **Feature gate**: redirects and 404 logging are enabled **per site by a super admin** in the CMS dashboard (Super User → Sites). When a site has redirects disabled, those endpoints answer `403`, and the SDK methods **throw** a `CmsError` with `status: 403`. `resolveRedirect` also throws a `CmsError` with `status: 404` when no redirect matches the path, which is the normal case for most requests. The examples below check `error.status`: the middleware treats a 404 as "no redirect" and a 403 as "redirects are off" and falls through to normal rendering in both cases, `next.config` builds without redirects on a 403, and the 404 logger swallows its rejection.
 
 ---
 
@@ -2322,7 +2516,8 @@ Use the shared CMS client singleton from `@/lib/cms` — do **not** create a new
 // middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { cms, SITE_ID } from "@/lib/cms";
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -2344,9 +2539,7 @@ export async function middleware(request: NextRequest) {
       : pathname;
 
   try {
-    // No match (404) and redirects switched off (403) both resolve to null here;
-    // anything else is a real failure and lands in the catch below.
-    const resolution = await orNull(cms.resolveRedirect(SITE_ID, normalizedPath));
+    const resolution = await cms.resolveRedirect(SITE_ID, normalizedPath);
 
     if (resolution && resolution.redirect.enabled) {
       const { destinationPath, redirect } = resolution;
@@ -2362,8 +2555,13 @@ export async function middleware(request: NextRequest) {
       });
     }
   } catch (error) {
-    // Silently continue — never let redirect errors break page rendering
-    console.error("Middleware redirect resolution error:", error);
+    // 404: no redirect matches this path (the usual case).
+    // 403: redirects are switched off for the site.
+    // Both are normal outcomes. Log anything else, but never let a redirect
+    // failure break page rendering.
+    const expected =
+      error instanceof CmsError && (error.status === 404 || error.status === 403);
+    if (!expected) console.error("Middleware redirect resolution error:", error);
   }
 
   return NextResponse.next();
@@ -2499,20 +2697,28 @@ Every `Page` returned by `fetchPageByUrl` or `fetchPages` includes an `seo` fiel
 ```tsx
 // app/[[...slug]]/page.tsx
 import type { Metadata } from "next";
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { cms, SITE_ID } from "@/lib/cms";
 
 interface Props {
   params: Promise<{ slug?: string[] }>;
 }
 
+// A 404 here is normal (a detail URL has no page of its own, a new site has no
+// config yet), so fall back to defaults. Rethrow anything else: unhandled, the
+// 404 would turn into a 500, and a swallowed outage would ship empty metadata.
+const nullOn404 = (error: unknown) => {
+  if (error instanceof CmsError && error.status === 404) return null;
+  throw error;
+};
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const urlPath = slug ? `/${slug.join("/")}` : "/";
 
-  // Without orNull, an unknown URL would throw here and turn the 404 into a 500.
   const [page, siteConfig] = await Promise.all([
-    orNull(cms.fetchPageByUrl(SITE_ID, urlPath)),
-    orNull(cms.fetchSiteConfig(SITE_ID)),
+    cms.fetchPageByUrl(SITE_ID, urlPath).catch(nullOn404),
+    cms.fetchSiteConfig(SITE_ID).catch(nullOn404),
   ]);
 
   const siteName = siteConfig?.site_name ?? "";
@@ -2557,17 +2763,23 @@ For dedicated pages (blog detail, service detail, etc.) the pattern is the same 
 ```tsx
 // app/blog/[slug]/page.tsx
 import type { Metadata } from "next";
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { cms, SITE_ID } from "@/lib/cms";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
+const nullOn404 = (error: unknown) => {
+  if (error instanceof CmsError && error.status === 404) return null;
+  throw error;
+};
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const [blog, siteConfig] = await Promise.all([
-    orNull(cms.fetchBlogBySlug(SITE_ID, slug)),
-    orNull(cms.fetchSiteConfig(SITE_ID)),
+    cms.fetchBlogBySlug(SITE_ID, slug).catch(nullOn404),
+    cms.fetchSiteConfig(SITE_ID).catch(nullOn404),
   ]);
   const siteName = siteConfig?.site_name ?? "";
 
@@ -2652,6 +2864,7 @@ components/
 │   ├── TeamPage.tsx
 │   ├── TeamCategoryPage.tsx
 │   ├── TeamMemberDetailPage.tsx
+│   ├── BrandGroupDetailPage.tsx
 │   ├── ContactPage.tsx
 │   ├── CustomPage.tsx
 │   │
@@ -2717,7 +2930,7 @@ export interface PaginatedResponse<T> {
 }
 ```
 
-Public list endpoints cap `limit` (usually 20, 40 for product categories and brands), so a larger `limit` silently returns fewer items. Page with `{ page }`, or use `findInPages` (see [Initialization](#2-initialization)) to look an item up.
+Public list endpoints cap `limit` (usually 20, 40 for product categories and brands), so a larger `limit` silently returns fewer items. Page with `{ page }`. To get a single item, use its `fetch…BySlug` / `fetch…Detail` method, or the list method's filter (`ids`, `group_id`, `category_id`, …); never fetch a list and search it.
 
 ### Request Options (`FetchOptions`)
 
@@ -2737,7 +2950,7 @@ export interface FetchOptions extends RequestInit {
 
 ## API Reference
 
-Every method throws a `CmsError` when the request fails, including a `404` when a single item is not found (see [Error Handling](#error-handling)). Wrap single-item reads in `orNull()` where "not found" is a normal outcome.
+Every method throws a `CmsError` when the request fails, including a `404` when a single item is not found. Check `error.status` to tell the cases apart (see [Error Handling](#error-handling)).
 
 ### Global Configuration
 
@@ -2776,7 +2989,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 ### Redirects
 
 - `fetchRedirects(siteId, options?)`: Returns the site's enabled redirects (disabled ones are not returned). Use in `next.config.ts` for build-time static redirects. Throws a `CmsError` with status `403` when redirects are switched off for the site.
-- `resolveRedirect(siteId, sourcePath, options?)`: Resolves a single path against CMS redirects. Returns a `ResolvedRedirect` (`redirect`, `destinationPath`, `params`, `type`). Throws a `CmsError` with status `404` when nothing matches and `403` when redirects are switched off, so wrap it in `orNull()`. Supports pattern redirects with captured params. Use in middleware.
+- `resolveRedirect(siteId, sourcePath, options?)`: Resolves a single path against CMS redirects. Returns a `ResolvedRedirect` (`redirect`, `destinationPath`, `params`, `type`). Throws a `CmsError` with status `404` when nothing matches (the usual case) and `403` when redirects are switched off; treat both as "no redirect", as in the [middleware example](#option-a--middleware-recommended). Supports pattern redirects with captured params. Use in middleware.
 - `reportRedirect404(siteId, sourcePath, referrer?, options?)`: Logs a 404 hit to the CMS for redirect candidate tracking. Call fire-and-forget from `not-found.tsx`, with a `.catch()`: it rejects with `429` when rate-limited. When 404 logging is switched off for the site the API accepts and discards the hit, so it still resolves to `null`. The root path and paths over 2048 characters are skipped without a request, and `referrer` is kept only when it is an absolute http(s) URL.
 
 ### FAQ & Help
@@ -3096,18 +3309,52 @@ Each HTML field is marked with a `// HTML (rich text)` comment in its type defin
 
 Every method **throws a `CmsError`** when a request fails. The SDK does not log anything; handling and logging errors is up to your app.
 
-- **Any non-2xx response throws**, a `404` for a missing item included. The single-item methods are typed `T | null`, but they only resolve to `null` for an empty (`204`) response.
-- **`error.errors`** holds per-field validation details from a `400`, and **`error.retryAfter`** the seconds from a `429`'s `Retry-After` header, when the API sent them.
-- **Network errors throw** a `CmsError` with no `status`, after the retries described in [Request Options](#request-options-fetchoptions).
+- **Any non-2xx response throws**, a `404` for a missing item included. The SDK passes the API's status through unchanged as `error.status`, and the API's `message` as `error.message`.
+- **Reads never resolve to `null`.** The single-item methods are still typed `T | null`, a leftover from older SDK versions that returned `null` on failure. A read resolves to the item or throws. The only method that resolves to `null` is `reportRedirect404`, whose endpoint answers `204` with no body.
 - **Paginated lists** resolve to a `PaginatedResponse` (`{ data, pagination }`), whose `data` may be empty. They never resolve to a bare array or `null`.
-- **Feature gates** answer `403`: store methods when the site's store is off, and redirect methods when redirects are off.
+- **Network errors throw** a `CmsError` with no `status`, after the retries described in [Request Options](#request-options-fetchoptions).
 
-Use `orNull()` from [Initialization](#2-initialization) where "not found" is a normal outcome. It turns `404` and `403` into `null` and rethrows everything else, so a real outage still reaches your error page instead of rendering an empty page:
+### Status Codes
+
+| `error.status` | Meaning | Typical handling |
+| --- | --- | --- |
+| `404` | The item does not exist or is not published. Also sent for **every** request when the site itself is unpublished, deleted or the `SITE_ID` is wrong (`message`: `"Site not available"`). | Detail page: `notFound()`. Optional content (header, footer, site config, About): render without it. |
+| `403` | A feature is switched off for the site: the store (store methods) or redirects (`fetchRedirects`, `resolveRedirect`). Contact form: captcha failed. | Store: check `fetchStoreSettings().is_store_enabled` first instead of catching this. Redirects: treat as "no redirects". |
+| `400` | Invalid request; per-field details in `error.errors` when the API sent them. | Show the message on forms (it is written by the CMS). |
+| `429` | Rate limited; `error.retryAfter` holds the seconds from `Retry-After`. | Back off, or show a "try again" message. |
+| `5xx` | Server failure (`502`/`503`/`504` are retried first). | Let it reach your error page. |
+| none | Network failure, after retries. | Let it reach your error page. |
+
+Check the status where a case is a normal outcome, and rethrow everything else so a real outage reaches your error page instead of rendering an empty one. Next.js's `notFound()` throws, so the handler below never resolves for a 404:
 
 ```tsx
-const blog = await orNull(cms.fetchBlogBySlug(SITE_ID, slug));
-if (!blog) notFound();
+import { CmsError } from "@crayonscodetech/cms-sdk";
+import { notFound } from "next/navigation";
+
+const blog = await cms.fetchBlogBySlug(SITE_ID, slug).catch((error) => {
+  if (error instanceof CmsError && error.status === 404) notFound();
+  throw error;
+});
+if (!blog) notFound(); // never runs; only narrows the leftover `| null` type
 ```
+
+Where a missing item is optional, resolve the 404 to `null` and render without it:
+
+```tsx
+// app/layout.tsx
+const nullOn404 = (error: unknown) => {
+  if (error instanceof CmsError && error.status === 404) return null;
+  throw error;
+};
+
+const [header, footer, siteConfig] = await Promise.all([
+  cms.fetchHeader(SITE_ID).catch(nullOn404),
+  cms.fetchFooter(SITE_ID).catch(nullOn404),
+  cms.fetchSiteConfig(SITE_ID).catch(nullOn404),
+]);
+```
+
+> Do not turn a `403` into `null` for store reads: a store that was switched off by mistake would then show as "product not found" pages instead of an error.
 
 ### Custom Error Class
 
@@ -3149,6 +3396,7 @@ The `socials` field in `TeamMember` is an array of `{ site_name, url }` objects,
 **Solution**: Render each one as a labelled link. The SDK has no icon component, and `lucide-react` no longer ships brand logos, so map `site_name` values to your own brand SVGs if you want logos.
 
 ```tsx
+// components/social-links.tsx
 import type { TeamMember } from "@crayonscodetech/cms-sdk";
 
 export function SocialLinks({ socials }: { socials: TeamMember["socials"] }) {
@@ -3175,13 +3423,17 @@ The `about` section type in the CMS refers to global "About Us" data (mission, v
 
 ```tsx
 // components/sections/about.tsx
-import { cms, orNull, SITE_ID } from "@/lib/cms";
+import { cms, SITE_ID } from "@/lib/cms";
 import { CmsIcon } from "@/components/cms-icon"; // see "Icons" under Usage in Components
 import SafeHtml from "@/components/safe-html";
-import type { AboutSection as AboutSectionType } from "@crayonscodetech/cms-sdk";
+import { CmsError, type AboutSection as AboutSectionType } from "@crayonscodetech/cms-sdk";
 
 export async function AboutSection({ content }: { content: AboutSectionType }) {
-  const about = await orNull(cms.fetchAboutUs(SITE_ID));
+  const about = await cms.fetchAboutUs(SITE_ID).catch((error) => {
+    // 404: the site has no About Us data yet, so render nothing.
+    if (error instanceof CmsError && error.status === 404) return null;
+    throw error;
+  });
 
   if (!about) return null;
 
@@ -3262,13 +3514,16 @@ If `cms.fetch...` is failing with "Invalid URL", your `NEXT_PUBLIC_CMS_BASE_URL`
 
 Paginated lists resolve to `{ data, pagination }`, and `data` is an empty array when there is nothing to show. Errors are not turned into empty values: a failed request throws a `CmsError` (see [Error Handling](#error-handling)).
 
-**Solution**: Check `data.length`, and use `orNull()` for single items.
+**Solution**: Check `data.length` for lists. A missing single item throws a `CmsError` with `status` `404`; catch that status and render nothing.
 
 ```tsx
 const { data: services } = await cms.fetchServices(SITE_ID);
 if (services.length === 0) return <p>No services found.</p>;
 
-const about = await orNull(cms.fetchAboutUs(SITE_ID));
+const about = await cms.fetchAboutUs(SITE_ID).catch((error) => {
+  if (error instanceof CmsError && error.status === 404) return null;
+  throw error;
+});
 if (!about) return null;
 ```
 
