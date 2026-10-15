@@ -82,7 +82,8 @@ export interface ProductListItem {
 }
 
 export interface Product extends Omit<ProductListItem, "variants"> {
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string;
   needs_shipping: boolean;
   metadata: unknown;
   deleted_at: string | null;

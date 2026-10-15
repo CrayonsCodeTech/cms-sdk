@@ -6,7 +6,8 @@ export interface BrandGroup {
   site_id: string;
   title: string;
   slug: string;
-  description: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string | null;
   is_published: boolean;
   order: number;
   created_at: string;
@@ -20,7 +21,8 @@ export interface Brand {
   id: string;
   brand_group_id: string;
   name: string;
-  description: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string | null;
   website_url: string | null;
   logo_url: string;
   logo_alt: string | null;

@@ -15,7 +15,8 @@ export interface HeroContent {
   section_heading: string;
   title: string;
   subtitle: string;
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string;
   cta: CTA[];
   video_url: string;
   image: {
@@ -29,7 +30,8 @@ export interface CustomContent {
   logo: string | null;
   section_title: string | null;
   card_title: string;
-  card_content: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  card_content: string;
   card_content_bold?: boolean | null;
   cta?: CTA;
   image_src: string;
@@ -38,7 +40,8 @@ export interface CustomContent {
   reverse: boolean | null;
   image_style: string | null;
   small_image: boolean | null;
-  subtitle?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  subtitle?: string | null;
   external_link: boolean;
   stats?: Array<{
     value: string;
@@ -53,7 +56,8 @@ export interface CTAContent {
   section_heading: string;
   title: string;
   subtitle?: string;
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string;
   cta: CTA[];
   image: Image[];
   footer_text?: string;
@@ -75,7 +79,8 @@ export interface ServicesSection {
 export interface GenericSection {
   section_heading: string | null;
   title: string;
-  subtitle: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  subtitle: string | null;
 }
 
 export interface BlogSection extends GenericSection {
@@ -103,7 +108,8 @@ export interface RichContentSection {
   section_heading: string;
   title: string;
   subtitle: string;
-  content: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  content: string;
 }
 
 export interface AboutSection {
@@ -114,7 +120,8 @@ export interface AboutSection {
 
 export interface MultiValueItem {
   title: string;
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string;
   image: Image;
   cta?: Partial<CTA>;
   badge?: string | null;
@@ -125,7 +132,8 @@ export interface MultiValueSection {
   section_heading: string;
   title: string;
   subtitle?: string;
-  description: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string;
   image?: Image | null;
   values: MultiValueItem[];
 }
@@ -148,7 +156,8 @@ export interface HistoryItem {
   year: string;
   title: string;
   badge?: string | null;
-  description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description?: string | null;
   image?: string | null;
   link?: string | null;
   is_external?: boolean | null;

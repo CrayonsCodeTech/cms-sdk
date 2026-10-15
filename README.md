@@ -3256,7 +3256,7 @@ export default function SafeHtml({
 }
 ```
 
-Each HTML field is marked with a `// HTML (rich text)` comment in its type definition; hover over the field in your IDE, or browse the source on GitHub (link above).
+Each HTML field carries an `HTML (rich text): sanitize before rendering` doc comment in its type definition, so hovering the field in your IDE shows it; the table below lists them all.
 
 **Fields that contain HTML:**
 
@@ -3562,7 +3562,7 @@ The page component passes `page.sections` to `RenderSections` (or `SectionRender
 
 ### Step 7 — HTML fields are sanitized and rendered
 
-Some fields (`description`, `content`, `answer`, etc.) contain **HTML markup** from the CMS rich-text editor. Render them through `SafeHtml` (see [Rich Text / HTML Fields](#rich-text--html-fields)), which sanitizes them with a DOM-free sanitizer so it also works during server rendering on Workers. Fields that contain HTML are marked with a `// HTML (rich text)` comment in their type definitions.
+Some fields (`description`, `content`, `answer`, etc.) contain **HTML markup** from the CMS rich-text editor. Render them through `SafeHtml` (see [Rich Text / HTML Fields](#rich-text--html-fields)), which sanitizes them with a DOM-free sanitizer so it also works during server rendering on Workers. Fields that contain HTML carry an `HTML (rich text)` doc comment in their type definitions, visible on hover.
 
 ### Step 8 — Layout wraps everything
 

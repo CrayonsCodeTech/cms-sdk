@@ -12,7 +12,8 @@ export interface TeamMember {
   name: string;
   slug: string;
   position: string | null;
-  description: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description: string | null;
   profile_image: string | null;
   email: string | null;
   location: string | null;

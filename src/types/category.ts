@@ -7,7 +7,8 @@ export interface Category {
   site_id: string;
   name: string;
   slug: string;
-  description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description?: string | null;
   order: number;
   seo?: ProductSEO | null;
   extra?: (Record<string, unknown> & { sections?: Section[] }) | null;

@@ -14,9 +14,12 @@ export interface AboutUsData {
   id: string;
   site_id: string;
   company_profile_summary?: string | null;
-  company_profile: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
-  vision?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
-  mission?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  company_profile: string;
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  vision?: string | null;
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  mission?: string | null;
   image_url: string;
   image_alt: string;
   video_url?: string | null;

@@ -18,7 +18,8 @@ export interface Event {
   link_text?: string | null;
   image_url?: string | null;
   image_alt?: string | null;
-  description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description?: string | null;
   excerpt?: string | null;
   status?: string | null;
   is_published: boolean;

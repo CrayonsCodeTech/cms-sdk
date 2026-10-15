@@ -10,7 +10,8 @@ export interface Blog {
   thumbnail_url?: string | null;
   thumbnail_alt?: string | null;
   author: string;
-  description?: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  /** HTML (rich text): sanitize before rendering (README "Rich Text / HTML Fields"); never inject raw. */
+  description?: string | null;
   excerpt?: string | null;
   is_published: boolean;
   published_at?: string | null;
