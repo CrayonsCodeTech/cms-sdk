@@ -2484,7 +2484,13 @@ export async function middleware(request: NextRequest) {
       : pathname;
 
   try {
-    const resolution = await cms.resolveRedirect(SITE_ID, normalizedPath);
+    // This runs before every page, so cap the wait well below the default
+    // 10 s and skip the retry: a slow CMS should cost a page at most 2 s,
+    // after which it renders without the redirect (see the catch below).
+    const resolution = await cms.resolveRedirect(SITE_ID, normalizedPath, {
+      timeoutMs: 2000,
+      retries: 0,
+    });
 
     if (resolution && resolution.redirect.enabled) {
       const { destinationPath, redirect } = resolution;
@@ -2909,8 +2915,13 @@ export interface FetchOptions extends RequestInit {
   revalidate?: number; // Seconds to cache (Next.js `fetch` cache)
   tags?: string[]; // Cache tags for on-demand revalidation (Next.js)
   retries?: number; // Extra attempts after a network error or a 502/503/504 (default 1)
+  timeoutMs?: number; // Per-attempt timeout in ms (default 10000; 0 turns it off)
 }
 ```
+
+- **Timeouts**: each attempt (the request plus reading its body) fails after `timeoutMs` with a `CmsError` whose `timedOut` is `true`, so a hung CMS can't stall a render, middleware or `next build` until the platform kills it. The default is `DEFAULT_TIMEOUT_MS` (10 s) for reads and `DEFAULT_SUBMIT_TIMEOUT_MS` (30 s) for `submitContactForm`, which may upload files. Set a client-wide default with `createCmsClient({ baseUrl, timeoutMs })`, override it per call with `{ timeoutMs }`, or pass `0` to turn it off. A timeout is **not** retried.
+  - The timeout does not cancel the request; the SDK stops waiting for it. It deliberately sends no `AbortSignal`, because Next.js skips its per-render request deduplication for any `fetch` with a signal. You can still pass your own `signal` in `options` to really abort, at the cost of that deduplication.
+  - A submission that timed out may still have reached the CMS. Tell the visitor to check before sending again rather than resending automatically.
 
 - **Caching**: most methods set their own `revalidate` and `tags`, and those take precedence over the client's `defaultOptions`. To change caching for a call, pass `options` to that call. `revalidate` and `tags` only have an effect in Next.js; other runtimes ignore them.
 - **Retries**: a failed attempt is retried after 1 s, then 2 s. Errors other than 502/503/504 (a 404, for example) are not retried. `placeOrder` sends with `retries: 0` unless you pass `retries`, and `submitContactForm` never retries, so a slow response can't create a duplicate order or message. The generic `cms.fetch` retries whatever method you give it, so pass `retries: 0` for a `POST`.
@@ -3291,7 +3302,7 @@ Every method **throws a `CmsError`** when a request fails. The SDK does not log 
 | `400` | Invalid request; per-field details in `error.errors` when the API sent them. | Show the message on forms (it is written by the CMS). |
 | `429` | Rate limited; `error.retryAfter` holds the seconds from `Retry-After`. | Back off, or show a "try again" message. |
 | `5xx` | Server failure (`502`/`503`/`504` are retried first). | Let it reach your error page. |
-| none | Network failure, after retries. | Let it reach your error page. |
+| none | Network failure, after retries; or, with `error.timedOut` set, no answer within `timeoutMs` (not retried). | Let it reach your error page. |
 
 Check the status where a case is a normal outcome, and rethrow everything else so a real outage reaches your error page instead of rendering an empty one. Next.js's `notFound()` throws, so the handler below never resolves for a 404:
 
@@ -3339,7 +3350,7 @@ try {
 }
 ```
 
-`CmsError` has `message` (the CMS's `message` field when the response had one), `status` (absent for network errors) and `url` (the full request URL, query string included, so avoid logging it where query strings may hold personal data).
+`CmsError` has `message` (the CMS's `message` field when the response had one), `status` (absent for network errors and timeouts), `timedOut` (`true` when the request gave up after `timeoutMs`) and `url` (the full request URL, query string included, so avoid logging it where query strings may hold personal data).
 
 ## FAQ & Common Issues
 

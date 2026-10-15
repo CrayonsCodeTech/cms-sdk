@@ -46,11 +46,20 @@ export interface FetchOptions extends RequestInit {
   revalidate?: number;
   tags?: string[];
   retries?: number;
+  /**
+   * Milliseconds each attempt (request plus reading its body) may take before
+   * it fails with a `CmsError` whose `timedOut` is true. A timeout is not
+   * retried. `0` turns the timeout off. Defaults to the client's `timeoutMs`,
+   * or `DEFAULT_TIMEOUT_MS` (`DEFAULT_SUBMIT_TIMEOUT_MS` for `submitContactForm`).
+   */
+  timeoutMs?: number;
 }
 
 export interface CmsClientConfig {
   baseUrl: string;
   defaultOptions?: FetchOptions;
+  /** Default `timeoutMs` for every read. Defaults to `DEFAULT_TIMEOUT_MS`. */
+  timeoutMs?: number;
 }
 
 export class CmsError extends Error {
@@ -62,11 +71,19 @@ export class CmsError extends Error {
     public errors?: unknown,
     /** Seconds to wait before retrying, from a 429's `Retry-After` header. */
     public retryAfter?: number,
+    /** True when the request gave up after `timeoutMs`; `status` is then absent. */
+    public timedOut?: boolean,
   ) {
     super(message);
     this.name = "CmsError";
   }
 }
+
+/** Default per-attempt timeout for reads, in milliseconds. */
+export const DEFAULT_TIMEOUT_MS = 10_000;
+
+/** Default timeout for `submitContactForm`, which may upload up to 3 MiB of attachments. */
+export const DEFAULT_SUBMIT_TIMEOUT_MS = 30_000;
 
 /** Most ids an id-list filter (`ids`, `album_id`, `category_id`, `brand_id`, collection `id`) accepts; more is a 400. */
 export const MAX_ID_LIST = 20;
@@ -97,8 +114,39 @@ async function errorFromResponse(response: Response, url: string): Promise<CmsEr
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Races `run` against a timer instead of handing fetch an AbortSignal: Next.js
+// skips its per-render request dedupe for any fetch that carries a signal, so a
+// default signal would double the identical page and site-config fetches a
+// render makes. The abandoned request is not cancelled, but the caller stops
+// waiting for it. `ms <= 0` turns the timeout off.
+async function withTimeout<T>(run: () => Promise<T>, ms: number, url: string): Promise<T> {
+  if (!(ms > 0)) return run();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new CmsError(`Request timed out after ${ms}ms`, undefined, url, undefined, undefined, true),
+        ),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([run(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Statuses worth a retry: the gateway or the worker was briefly unavailable. */
+const RETRY_STATUSES = [502, 503, 504];
+
+/** Returned from an attempt that should be retried after a backoff. */
+const RETRY = Symbol("retry");
+
 export function createCmsClient(config: CmsClientConfig) {
   const { baseUrl, defaultOptions = {} } = config;
+  const clientTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   async function cmsFetch<T>(
     endpoint: string,
@@ -109,6 +157,7 @@ export function createCmsClient(config: CmsClientConfig) {
       revalidate = CACHE.NO_CACHE,
       tags,
       retries = 1,
+      timeoutMs = clientTimeoutMs,
       ...rest
     } = { ...defaultOptions, ...options };
 
@@ -124,25 +173,36 @@ export function createCmsClient(config: CmsClientConfig) {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const response = await fetch(url, fetchConfig);
+        const outcome = await withTimeout(
+          async () => {
+            const response = await fetch(url, fetchConfig);
 
-        if (!response.ok) {
-          // Retry on transient server errors (502, 503, 504)
-          if (attempt < retries && [502, 503, 504].includes(response.status)) {
-            await sleep(Math.pow(2, attempt) * 1000);
-            continue;
-          }
+            if (!response.ok) {
+              // Retry on transient server errors (502, 503, 504)
+              if (attempt < retries && RETRY_STATUSES.includes(response.status)) {
+                return RETRY;
+              }
 
-          throw await errorFromResponse(response, url);
+              throw await errorFromResponse(response, url);
+            }
+
+            // 204 / empty body — nothing to parse
+            if (response.status === 204) {
+              return { value: null };
+            }
+
+            const result = await response.json();
+            return { value: (result.data ?? result) as T };
+          },
+          timeoutMs,
+          url,
+        );
+
+        if (outcome === RETRY) {
+          await sleep(Math.pow(2, attempt) * 1000);
+          continue;
         }
-
-        // 204 / empty body — nothing to parse
-        if (response.status === 204) {
-          return null;
-        }
-
-        const result = await response.json();
-        return result.data ?? result;
+        return outcome.value;
       } catch (error) {
         if (error instanceof CmsError) throw error;
 
@@ -169,6 +229,7 @@ export function createCmsClient(config: CmsClientConfig) {
       revalidate = CACHE.NO_CACHE,
       tags,
       retries = 1,
+      timeoutMs = clientTimeoutMs,
       ...rest
     } = { ...defaultOptions, ...options };
 
@@ -184,18 +245,29 @@ export function createCmsClient(config: CmsClientConfig) {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const response = await fetch(url, fetchConfig);
+        const outcome = await withTimeout(
+          async () => {
+            const response = await fetch(url, fetchConfig);
 
-        if (!response.ok) {
-          if (attempt < retries && [502, 503, 504].includes(response.status)) {
-            await sleep(Math.pow(2, attempt) * 1000);
-            continue;
-          }
+            if (!response.ok) {
+              if (attempt < retries && RETRY_STATUSES.includes(response.status)) {
+                return RETRY;
+              }
 
-          throw await errorFromResponse(response, url);
+              throw await errorFromResponse(response, url);
+            }
+
+            return { value: (await response.json()) as PaginatedResponse<T> };
+          },
+          timeoutMs,
+          url,
+        );
+
+        if (outcome === RETRY) {
+          await sleep(Math.pow(2, attempt) * 1000);
+          continue;
         }
-
-        return await response.json();
+        return outcome.value;
       } catch (error) {
         if (error instanceof CmsError) throw error;
 
@@ -801,28 +873,37 @@ export function createCmsClient(config: CmsClientConfig) {
     // the submission, and the one retryable-looking status here (503, a
     // misconfigured Turnstile) is a deployment fault that will not self-heal —
     // retrying it just burns the 1-per-60s write budget.
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        ...options,
-        method: "POST",
-        headers: { ...headers, ...(options?.headers as Record<string, string>) },
-        body,
-      });
-    } catch (error) {
-      throw new CmsError(
-        error instanceof Error ? error.message : "Network request failed",
-        undefined,
-        url,
-      );
-    }
+    // A timed-out submission may still have reached the CMS, so do not resend it
+    // automatically either.
+    const { timeoutMs = DEFAULT_SUBMIT_TIMEOUT_MS, ...fetchOptions } = options ?? {};
+    return withTimeout(
+      async () => {
+        let response: Response;
+        try {
+          response = await fetch(url, {
+            ...fetchOptions,
+            method: "POST",
+            headers: { ...headers, ...(fetchOptions.headers as Record<string, string>) },
+            body,
+          });
+        } catch (error) {
+          throw new CmsError(
+            error instanceof Error ? error.message : "Network request failed",
+            undefined,
+            url,
+          );
+        }
 
-    if (!response.ok) {
-      throw await errorFromResponse(response, url);
-    }
+        if (!response.ok) {
+          throw await errorFromResponse(response, url);
+        }
 
-    const result = await response.json();
-    return (result.data ?? result) as Contact;
+        const result = await response.json();
+        return (result.data ?? result) as Contact;
+      },
+      timeoutMs,
+      url,
+    );
   }
 
   function fetchFaqs(
