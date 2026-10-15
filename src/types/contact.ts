@@ -15,7 +15,9 @@ export interface ContactPayload {
   turnstile_token?: string;
 }
 
-export interface Contact extends ContactPayload {
+export interface Contact extends Omit<ContactPayload, "turnstile_token" | "type"> {
+  /** "contact" unless the submission set one. */
+  type: string;
   id: string;
   site_id: string;
   is_read: boolean;

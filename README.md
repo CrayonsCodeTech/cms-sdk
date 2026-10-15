@@ -1225,7 +1225,7 @@ export default async function EventDetailPage({
 
 ### Gallery Page — Albums & Photos
 
-The `gallery` section carries the `album_id` to display. Fetch albums with `fetchAlbums`; each album includes its `items` (photos).
+The `gallery` section carries the `album_id` to display. Fetch albums with `fetchAlbums`, and their photos with `fetchAlbumItems` (albums never include `items`).
 
 ```tsx
 // components/pages/GalleryPage.tsx
@@ -1259,11 +1259,11 @@ export default async function GalleryPage({ page }: { page: Page }) {
 
 **Album detail page:**
 
-There is no album-by-slug method, so page through `fetchAlbums` with `findInPages` (see [Initialization](#2-initialization)); a single page can miss albums beyond the first 20.
+Fetch the album with `fetchAlbumBySlug` and its photos with `fetchAlbumItems` (default limit 10, max 100, so pass a `limit`).
 
 ```tsx
 // components/pages/GalleryDetailPage.tsx
-import { cms, findInPages, SITE_ID } from "@/lib/cms";
+import { cms, orNull, SITE_ID } from "@/lib/cms";
 import { notFound } from "next/navigation";
 import SafeHtml from "@/components/safe-html";
 
@@ -1273,12 +1273,11 @@ export default async function AlbumDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const album = await findInPages(
-    (page) => cms.fetchAlbums(SITE_ID, { page }),
-    (a) => a.slug === slug,
-  );
+  const album = await orNull(cms.fetchAlbumBySlug(SITE_ID, slug));
 
   if (!album) notFound();
+
+  const { data: items } = await cms.fetchAlbumItems(SITE_ID, { album: slug, limit: 100 });
 
   return (
     <div>
@@ -1286,7 +1285,7 @@ export default async function AlbumDetailPage({
       <SafeHtml html={album.description} />
 
       <div className="grid">
-        {album.items?.map((item) => (
+        {items.map((item) => (
           <figure key={item.id}>
             <img src={item.image_url} alt={item.image_alt ?? ""} />
             {item.caption && (
@@ -2748,7 +2747,7 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 
 ### Pages
 
-- `fetchPages(siteId, params?, options?)`: Returns paginated page summaries (`10` items per backend page, no `sections`). Params: `{ page }`.
+- `fetchPages(siteId, params?, options?)`: Returns paginated page summaries (no `sections`). Params: `{ page, limit }`. Default limit: 10, max 20.
 - `fetchPageByUrl(siteId, urlPath, options?)`: Fetches a specific page directly by URL path. Throws a `CmsError` with status `404` when no published page has that URL.
 - `fetchPageByType(siteId, pageType, options?)`: Fetches the site's single published page of a given `PageType` (for example `"home"` or `"blog"`), with its sections. Prefer it when you know which kind of page you want but not its URL, since editors can rename URLs. Throws a `CmsError` with status `404` when the site has no published page of that type.
 
@@ -2770,15 +2769,15 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 - `fetchTestimonials(siteId, params?, options?)`: Returns paginated testimonials. Params: `{ type?, page?, limit? }`. Default limit: 20.
 - `fetchEvents(siteId, params?, options?)`: Returns paginated events. Params: `{ page, limit, search }`.
 - `fetchEventBySlug(siteId, slug, options?)`: Returns a single published event by slug. Throws a `CmsError` with status `404` if not found or unpublished.
-- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search, ids }`. `ids` (array or comma-separated) returns only those albums — use it for an `album-group` section's `album_ids` instead of fetching every album.
+- `fetchAlbums(siteId, params?, options?)`: Returns paginated albums. Params: `{ page, limit, search, ids }`. `ids` (array or comma-separated) returns only those albums — use it for an `album-group` section's `album_ids` instead of fetching every album. At most 20 ids (`MAX_ID_LIST`), more is a `400`; an empty list matches no albums, so omit `ids` to get all of them.
 - `fetchAlbumBySlug(siteId, slug, options?)`: Returns a single published album by slug, including its `extra.sections` (not its photos; use `fetchAlbumItems` with `{ album: slug }`). Throws a `CmsError` with status `404` if not found or unpublished.
-- `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. Default limit: 20.
+- `fetchAlbumItems(siteId, params, options?)`: Returns paginated items for an album. Params: `{ album?, album_id?, page?, limit? }`. `album_id` takes one id or several (array or comma-separated, at most 20); an empty list matches nothing. Default limit: 10, max 100.
 
 ### Redirects
 
 - `fetchRedirects(siteId, options?)`: Returns the site's enabled redirects (disabled ones are not returned). Use in `next.config.ts` for build-time static redirects. Throws a `CmsError` with status `403` when redirects are switched off for the site.
 - `resolveRedirect(siteId, sourcePath, options?)`: Resolves a single path against CMS redirects. Returns a `ResolvedRedirect` (`redirect`, `destinationPath`, `params`, `type`). Throws a `CmsError` with status `404` when nothing matches and `403` when redirects are switched off, so wrap it in `orNull()`. Supports pattern redirects with captured params. Use in middleware.
-- `reportRedirect404(siteId, sourcePath, referrer?, options?)`: Logs a 404 hit to the CMS for redirect candidate tracking. Call fire-and-forget from `not-found.tsx`, with a `.catch()`: it rejects with `403` when 404 logging is switched off and `429` when rate-limited.
+- `reportRedirect404(siteId, sourcePath, referrer?, options?)`: Logs a 404 hit to the CMS for redirect candidate tracking. Call fire-and-forget from `not-found.tsx`, with a `.catch()`: it rejects with `429` when rate-limited. When 404 logging is switched off for the site the API accepts and discards the hit, so it still resolves to `null`. The root path and paths over 2048 characters are skipped without a request, and `referrer` is kept only when it is an absolute http(s) URL.
 
 ### FAQ & Help
 
@@ -2812,11 +2811,13 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
     ```
   - **Attachments** (optional): `File[]`. Sending them switches the request to multipart.
     Caps, enforced server-side and pre-checked client-side: max 3 files, 3 MiB total, and a
-    MIME allowlist (PDF, PNG, JPEG, WebP, GIF, plain text, DOC, DOCX).
+    type allowlist (PDF, PNG, JPEG, WebP, GIF, plain text, DOC, DOCX). The server detects the
+    type from the file's bytes, so a file the browser reports with no type (or
+    `application/octet-stream`) is sent and judged there.
   - **Throws `CmsError` on failure**, like every method. Check `error.status` to tell
     rejection kinds apart:
-    `403` captcha failed (reset the widget — tokens are single-use), `429` rate limited,
-    `400` validation, `503` Turnstile misconfigured server-side.
+    `403` captcha failed (reset the widget — tokens are single-use), `429` rate limited
+    (`error.retryAfter` holds the seconds to wait), `400` validation, `503` Turnstile misconfigured server-side.
   - Never retried: a resend would duplicate the submission.
 
     ```typescript
@@ -2836,20 +2837,22 @@ Every method throws a `CmsError` when the request fails, including a `404` when 
 > All store methods use the `/api/public/store/` API prefix, not `/api/public/cms/`.
 
 - `fetchStoreSettings(siteId, options?)`: Returns `{ currency, price_visibility, is_store_enabled }`. Fetch this first — public endpoints never return `cost_price`, and when `price_visibility` is false the API also strips `price` and `sale_price` from every variant, so the storefront must render an inquiry flow rather than prices.
-- `fetchProductCategories(siteId, params?, options?)`: Returns paginated product categories. Params: `{ page, limit, search, ordering, parent_id }`.
+- `fetchProductCategories(siteId, params?, options?)`: Returns paginated product categories. Params: `{ page, limit, search, ordering, parent_id }`. Pass `parent_id: null` for top-level categories only. `ordering`: `order` (default), `-order`, `name`, `-name`. Default limit: 10, max 40.
 - `fetchProductCategoryBySlug(siteId, slug, params?, options?)`: Returns a single product category by slug **with a page of its published products** (subcategories included), shaped like `fetchCollectionDetail`: the category's fields plus `items` (`{ product }`) and `pagination`. Params: `{ page, limit, sort, availability }` (`limit` max 20).
-- `fetchProductBrands(siteId, params?, options?)`: Returns paginated product brands. Params: `{ page, limit, search, ordering }`.
+- `fetchProductBrands(siteId, params?, options?)`: Returns paginated product brands. Params: `{ page, limit, search, ordering }`. `ordering`: `name` (default) or `-name`. Default limit: 10, max 40.
 - `fetchProductBrandBySlug(siteId, slug, params?, options?)`: Returns a single product brand by slug **with a page of its published products**, shaped like `fetchCollectionDetail`: the brand's fields plus `items` (`{ product }`) and `pagination`. Params: `{ page, limit, category_id, sort, availability }` (`limit` max 20).
-- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured }`. `category_id` and `brand_id` accept several ids (array or comma-separated) and match any of them; `category_id` also includes each category's subcategories.
+- `fetchProducts(siteId, params?, options?)`: Returns paginated products. Params: `{ page, limit, search, category_id, tag_id, brand_id, is_featured, sort, min_price, max_price, availability }` (`limit` max 20). `category_id` and `brand_id` accept several ids (array or comma-separated, at most 20 each) and match any of them; `category_id` also includes each category's subcategories. `sort`, `min_price` and `max_price` are ignored when the store hides prices.
   - `category_id` is hierarchy-aware on the backend and includes child/grandchild categories.
 - `fetchProductDetail(siteId, slug, options?)`: Returns a single product by slug, **including `variants`**, `tags`, and its `category` and `brand` as `{ id, name, slug }` (or `null`), so there is no need to fetch the category or brand lists to show their names.
-- `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, the number of published products, no products). Params: `{ page, limit, search, id }`. The `id` parameter accepts a comma-separated string of collection IDs (e.g., `"id1,id2"`) to filter the results.
+- `fetchCollections(siteId, params?, options?)`: Returns collections (with `_count.items`, the number of published products, no products). Params: `{ page, limit, id }` (`limit` max 50). `id` takes one collection id or several (array or comma-separated, at most 20). `search` is accepted for compatibility but ignored by the API.
 - `fetchCollectionDetail(siteId, slug, params?, options?)`: Returns a single collection **with full `items` array** (products + variants included).
-  - Params: `{ page, limit, category_id }` (`category_id` accepts several ids, array or comma-separated)
+  - Params: `{ page, limit, category_id, sort, availability }` (`limit` max 20; `category_id` accepts several ids, array or comma-separated, at most 20)
   - Works for both manual and smart collections
 - `fetchCollectionDetailById(siteId, id, params?, options?)`: Same as `fetchCollectionDetail`, but keyed by collection ID for CMS-driven product sections.
-- `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag, matched by tag **slug** (not name or id). Each entry is `{ item, product }`. Params: `{ page, limit }`. To filter by tag id, as CMS product sections store it, use `fetchProducts(siteId, { tag_id })`.
+- `fetchProductsByTag(siteId, tag, params?, options?)`: Returns paginated products carrying a tag, matched by tag **slug** (not name or id). Each entry is a `ProductTagMatch`: `{ item, product }`. Params: `{ page, limit }`. To filter by tag id, as CMS product sections store it, use `fetchProducts(siteId, { tag_id })`.
 - `placeOrder(siteId, payload, options?)`: Places an order. Call from a server API route — never client-side.
+  - At most 50 line items (`MAX_ORDER_ITEMS`). A `400` carries per-field details in `error.errors`.
+  - When the store hides prices, the returned order has no `total_amount`, `discount`, `unit_price` or `total_price`.
   - `metadata` on the payload must be a **flat `Record<string, string>`** — the API validates it on a strict schema, so nested objects, numbers and arrays are rejected with a 400.
 
 ---
@@ -3094,6 +3097,7 @@ Each HTML field is marked with a `// HTML (rich text)` comment in its type defin
 Every method **throws a `CmsError`** when a request fails. The SDK does not log anything; handling and logging errors is up to your app.
 
 - **Any non-2xx response throws**, a `404` for a missing item included. The single-item methods are typed `T | null`, but they only resolve to `null` for an empty (`204`) response.
+- **`error.errors`** holds per-field validation details from a `400`, and **`error.retryAfter`** the seconds from a `429`'s `Retry-After` header, when the API sent them.
 - **Network errors throw** a `CmsError` with no `status`, after the retries described in [Request Options](#request-options-fetchoptions).
 - **Paginated lists** resolve to a `PaginatedResponse` (`{ data, pagination }`), whose `data` may be empty. They never resolve to a bare array or `null`.
 - **Feature gates** answer `403`: store methods when the site's store is off, and redirect methods when redirects are off.

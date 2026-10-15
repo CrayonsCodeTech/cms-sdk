@@ -11,15 +11,15 @@ export interface TeamMember {
   category_id: string;
   name: string;
   slug: string;
-  position?: string;
-  description?: string; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
-  profile_image?: string;
-  email?: string;
-  location?: string;
-  socials?: Social[];
+  position: string | null;
+  description: string | null; // HTML (rich text) — render with dangerouslySetInnerHTML or DOMPurify
+  profile_image: string | null;
+  email: string | null;
+  location: string | null;
+  socials: Social[] | null;
   is_published: boolean;
   order: number;
-  extra?: Record<string, unknown>;
+  extra: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }

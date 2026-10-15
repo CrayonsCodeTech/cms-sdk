@@ -16,6 +16,7 @@ export interface Album {
   seo_image: string | null;
   created_at: string;
   updated_at: string;
+  /** @deprecated Never returned by the public API; use `fetchAlbumItems`. */
   items?: AlbumItem[];
   extra?: (Record<string, unknown> & { sections?: Section[] }) | null;
 }

@@ -92,3 +92,8 @@ export interface Product extends Omit<ProductListItem, "variants"> {
   category?: ProductRef | null;
   brand?: ProductRef | null;
 }
+/** One `fetchProductsByTag` row: the tag link and the tagged product. */
+export interface ProductTagMatch {
+  item: { id: string; product_id: string; tag_id: string };
+  product: Product;
+}

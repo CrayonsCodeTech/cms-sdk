@@ -3,6 +3,7 @@ import type { Product } from "./product";
 import type { ProductSEO, ProductExtraData } from "./seo";
 
 export interface CollectionItem {
+  /** For a smart collection, a synthetic `smart-<collectionId>-<productId>`, not a stored row. */
   id: string;
   collection_id: string;
   product_id: string;
@@ -29,7 +30,7 @@ export interface CollectionListItem {
 
 export interface CollectionDetail extends Omit<CollectionListItem, "_count"> {
   items: CollectionItem[];
-  pagination?: PaginatedResponse<never>["pagination"];
+  pagination: PaginatedResponse<never>["pagination"];
 }
 
 export type Collection = CollectionListItem;

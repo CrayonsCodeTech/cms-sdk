@@ -11,7 +11,7 @@ export interface SocialLink {
 }
 
 export interface LocationConfig {
-  location: string[];
+  location?: string[];
   google_maps_url?: string;
   embed_map_url?: string;
 }
@@ -43,6 +43,7 @@ export interface SiteConfig {
   site_id: string;
   site_name: string;
   site_description: string | null;
+  site_template: string;
   logo: Branding;
   contact: ContactConfig;
 }
