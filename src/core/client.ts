@@ -180,8 +180,31 @@ const RETRY_STATUSES = [502, 503, 504];
 /** Returned from an attempt that should be retried after a backoff. */
 const RETRY = Symbol("retry");
 
+// Checked once, when the client is created: a trailing slash would make every
+// request `//api/...`, which the backend does not route, and a missing value
+// would otherwise only fail later, on every request, as a bare "Invalid URL".
+function normalizeBaseUrl(baseUrl: string | undefined): string {
+  const trimmed = (baseUrl ?? "").trim().replace(/\/+$/, "");
+  const fix = "Set it to the CMS API origin, e.g. https://api.cms.deployown.com (NEXT_PUBLIC_CMS_BASE_URL in the README).";
+  let protocol: string;
+  try {
+    protocol = new URL(trimmed).protocol;
+  } catch {
+    throw new Error(
+      trimmed
+        ? `createCmsClient: baseUrl "${trimmed}" is not a valid URL. ${fix}`
+        : `createCmsClient: baseUrl is missing. ${fix}`,
+    );
+  }
+  if (protocol !== "https:" && protocol !== "http:") {
+    throw new Error(`createCmsClient: baseUrl "${trimmed}" must start with https:// or http://. ${fix}`);
+  }
+  return trimmed;
+}
+
 export function createCmsClient(config: CmsClientConfig) {
-  const { baseUrl, defaultOptions = {} } = config;
+  const { defaultOptions = {} } = config;
+  const baseUrl = normalizeBaseUrl(config.baseUrl);
   const clientTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   async function cmsFetch<T>(

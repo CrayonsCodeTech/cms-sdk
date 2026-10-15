@@ -92,7 +92,9 @@ It is recommended to create a singleton instance of the CMS client in your proje
 import { createCmsClient } from "@crayonscodetech/cms-sdk";
 
 export const cms = createCmsClient({
-  baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL || "https://api.example.com",
+  // Throws at startup, naming the setting, if this is missing or not a URL.
+  // A trailing slash is fine; it is removed.
+  baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL!,
   defaultOptions: {
     revalidate: 3600, // Default 1 hour cache
   },
@@ -2539,7 +2541,7 @@ import type { NextConfig } from "next";
 import { CmsError, createCmsClient } from "@crayonscodetech/cms-sdk";
 
 const cms = createCmsClient({
-  baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL || "",
+  baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL!,
 });
 
 const SITE_ID = process.env.NEXT_PUBLIC_CMS_SITE_ID || "";
@@ -3141,8 +3143,8 @@ import { createCmsClient } from "@crayonscodetech/cms-sdk";
 // Regenerate the sitemap at most once per day — do NOT remove this export.
 export const revalidate = 86400;
 
-const cms = createCmsClient({ baseUrl: process.env.NEXT_PUBLIC_CMS_API_URL! });
-const SITE_ID = process.env.NEXT_PUBLIC_SITE_ID!;
+const cms = createCmsClient({ baseUrl: process.env.NEXT_PUBLIC_CMS_BASE_URL! });
+const SITE_ID = process.env.NEXT_PUBLIC_CMS_SITE_ID!;
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL!; // e.g. "https://example.com"
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -3482,11 +3484,11 @@ remotePatterns: [{ protocol: "https", hostname: "api.cms.deployown.com" }];
 
 ### 7. Environmental Variables not working
 
-If `cms.fetch...` is failing with "Invalid URL", your `NEXT_PUBLIC_CMS_BASE_URL` might be missing or incorrectly formatted.
+If `createCmsClient` throws "baseUrl is missing" or "is not a valid URL", your `NEXT_PUBLIC_CMS_BASE_URL` is missing or incorrectly formatted.
 
 **Solution**:
 
-- Ensure `.env.local` has `NEXT_PUBLIC_CMS_BASE_URL=https://api.cms.deployown.com` (no trailing slash).
+- Ensure `.env.local` has `NEXT_PUBLIC_CMS_BASE_URL=https://api.cms.deployown.com`. If it is missing or not a valid URL, `createCmsClient` throws at startup with a message naming it; a trailing slash is removed automatically.
 - If calling from a **Client Component**, the variable _must_ start with `NEXT_PUBLIC_`.
 
 ### 8. Handling Empty States
